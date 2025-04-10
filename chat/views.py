@@ -1,5 +1,6 @@
 import requests
 import os
+import json
 from .ai.agent import Agent  # Import the Agent class from the current app directory
 from .models import Thread, Message
 from .forms import MessageForm, ThreadForm
@@ -11,6 +12,7 @@ from django.contrib.auth.views import LoginView
 from django.conf import settings
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.http import StreamingHttpResponse
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import (
     api_view,
@@ -59,6 +61,9 @@ def openai_api_chat_completions_passthrough(request):
         "model", None
     )  # Provide a default if not specified
     api_version = settings.OPENAI_API_VERSION
+    
+    # Check if streaming is requested
+    is_streaming = request_data.get("stream", False)
 
     # Determine the API key and endpoint based on configuration
     if settings.OPENAI_API_TYPE == "azure":
@@ -76,15 +81,43 @@ def openai_api_chat_completions_passthrough(request):
             "Authorization": f"Bearer {api_key}",
         }
 
-    # Forward the request to the appropriate API
-    response = requests.post(
-        endpoint,
-        json=request_data,
-        headers=headers,
-    )
+    if is_streaming:
+        # Stream the response
+        def generate():
+            # Forward the request to the appropriate API
+            with requests.post(
+                endpoint,
+                json=request_data,
+                headers=headers,
+                stream=True
+            ) as response:
+                for chunk in response.iter_lines():
+                    if chunk:
+                        decoded_chunk = chunk.decode('utf-8')
+                        
+                        # Add data: prefix for SSE formatting and newlines
+                        if decoded_chunk.strip() and not decoded_chunk.startswith('data:'):
+                            yield f"data: {decoded_chunk}\n\n"
+                        else:
+                            yield f"{decoded_chunk}\n\n"
+                
+                # Add the final closing event
+                yield "data: [DONE]\n\n"
+                
+        return StreamingHttpResponse(
+            generate(),
+            content_type="text/event-stream"
+        )
+    else:
+        # Non-streaming behavior - forward the request and return complete response
+        response = requests.post(
+            endpoint,
+            json=request_data,
+            headers=headers,
+        )
 
-    # Return the API response
-    return Response(response.json())
+        # Return the API response
+        return Response(response.json())
 
 
 @api_view(["POST"])
