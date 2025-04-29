@@ -187,6 +187,7 @@ LOGIN_URL = "login"
 OPENAI_API_TYPE = os.getenv("OPENAI_API_TYPE", "openai")
 OPENAI_API_VERSION = os.getenv("OPENAI_API_VERSION", "2024-10-21")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_BASE = os.getenv("OPENAI_API_BASE")  # Add this line
 
 # Azure OpenAI Settings
 AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")

@@ -258,12 +258,12 @@ def thread_detail(request, pk):
 
 @login_required
 def create_thread(request):
-    # Generate a default name for the thread, e.g., "Chat on <current date>"
-    default_name = f"Chat on {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}"
-
-    # Create a new thread with the default name
-    new_thread = Thread.objects.create(name=default_name, user=request.user)
-
+    # Create a new thread with a temporary name
+    new_thread = Thread.objects.create(
+        name="New Chat",
+        user=request.user
+    )
+    
     # Redirect the user to the new thread's detail page
     return redirect("thread_detail", pk=new_thread.pk)
 
@@ -283,14 +283,19 @@ def new_message(request, pk):
     thread = get_object_or_404(Thread, pk=pk)
     if request.method == "POST":
         form = MessageForm(request.POST)
-        thread_form = ThreadForm(
-            request.POST, instance=thread
-        )  # Pass the current thread instance
+        thread_form = ThreadForm(request.POST, instance=thread)
         if form.is_valid() and thread_form.is_valid():
             message = form.save(commit=False)
-            thread = thread_form.save()  # Save the thread form to update the thread
+            thread = thread_form.save()
             agent = Agent(thread=thread, prompt=thread.prompt)
-            agent.chat(message.content)
+            ai_reply = agent.chat(message.content)
+            
+            # Generate title if this is the first message in the thread
+            if thread.message_set.count() <= 2:  # User message + AI reply
+                conversation = f"User: {message.content}\nAssistant: {ai_reply}"
+                thread.name = agent.generate_title(conversation)
+                thread.save()
+            
             return redirect("thread_detail", pk=thread.pk)
         else:
             print(form.errors)

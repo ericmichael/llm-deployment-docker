@@ -21,7 +21,10 @@ if settings.OPENAI_API_TYPE == "azure":
         azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
     )
 else:
-    client = OpenAI()
+    client = OpenAI(
+        api_key=settings.OPENAI_API_KEY,
+        base_url=settings.OPENAI_API_BASE
+    )
 
 
 class Agent:
@@ -119,3 +122,34 @@ class Agent:
             Message.objects.create(
                 thread=self.thread, user=self.thread.user, content=content, role=role
             )
+
+    def generate_title(self, conversation):
+        """Generates a title for the conversation.
+
+        Args:
+            conversation: The first exchange between user and assistant.
+
+        Returns:
+            A string containing the generated title.
+        """
+        prompt = """Based on the conversation below, generate a concise title (10 words or less) that captures the main topic.
+        Keep it simple and descriptive. Just return the title, nothing else.
+
+        Conversation:
+        {conversation}
+        """
+        
+        messages = [
+            {"role": "system", "content": prompt.format(conversation=conversation)},
+        ]
+        
+        try:
+            completion = client.chat.completions.create(
+                model=self.thread.model if self.thread else "gpt-3.5-turbo",
+                messages=messages,
+                temperature=0,
+                max_tokens=60
+            )
+            return completion.choices[0].message.content.strip()
+        except Exception as e:
+            return "New Chat"
