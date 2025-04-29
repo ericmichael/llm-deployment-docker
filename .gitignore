@@ -100,6 +100,8 @@ celerybeat-schedule
 env/
 venv/
 ENV/
+#Jofred's env :^)
+llmEnv/ 
 env.bak/
 venv.bak/
 *.env

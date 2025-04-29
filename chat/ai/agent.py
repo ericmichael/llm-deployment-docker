@@ -21,7 +21,7 @@ if settings.OPENAI_API_TYPE == "azure":
         azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
     )
 else:
-    client = OpenAI()
+    client = OpenAI(base_url = settings.OPENAI_API_BASE, api_key = settings.OPENAI_API_KEY )
 
 
 class Agent:

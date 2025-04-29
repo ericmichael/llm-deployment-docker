@@ -23,6 +23,12 @@ from rest_framework.authentication import BaseAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import AuthenticationFailed
+from django.http import JsonResponse
+import json
+import logging
+from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 
 class CustomLoginView(LoginView):
@@ -266,6 +272,13 @@ def create_thread(request):
 
     # Redirect the user to the new thread's detail page
     return redirect("thread_detail", pk=new_thread.pk)
+    # if request.method == 'POST':
+    #     thread = Thread.objects.create(
+    #         user=request.user,
+    #         name='New Thread'  # This will be our default_name
+    #     )
+    #     return JsonResponse({'threadId': thread.id})
+    # return JsonResponse({'error': 'Invalid request method'}, status=400)
 
 
 @login_required
@@ -283,12 +296,41 @@ def new_message(request, pk):
     thread = get_object_or_404(Thread, pk=pk)
     if request.method == "POST":
         form = MessageForm(request.POST)
-        thread_form = ThreadForm(
-            request.POST, instance=thread
-        )  # Pass the current thread instance
+        thread_form = ThreadForm(request.POST, instance=thread)
         if form.is_valid() and thread_form.is_valid():
             message = form.save(commit=False)
-            thread = thread_form.save()  # Save the thread form to update the thread
+            
+            # Check if this is the first message in the thread
+            if thread.message_set.count() == 0:
+                try:
+                    # Configure OpenAI client with proper settings
+                    if settings.OPENAI_API_TYPE == "azure":
+                        client = OpenAI(
+                            api_key=settings.AZURE_OPENAI_API_KEY,
+                            base_url=f"{settings.AZURE_OPENAI_ENDPOINT}/openai/deployments/{settings.AZURE_OPENAI_DEPLOYMENT_NAME}/",
+                            api_version=settings.OPENAI_API_VERSION
+                        )
+                    else:
+                        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+                    response = client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[
+                            {"role": "system", "content": "Generate a brief 27-28 character description of the following conversation starter. Make it concise but meaningful."},
+                            {"role": "user", "content": form.cleaned_data['content']}
+                        ],
+                        max_tokens=50,
+                        temperature=0.7
+                    )
+                    new_thread_name = response.choices[0].message.content.strip()
+                    thread.name = new_thread_name
+                    thread.save()
+                except Exception as e:
+                    logger.error(f"Error generating thread name: {e}")
+                    # Keep default name if generation fails
+                    pass
+
+            thread = thread_form.save()
             agent = Agent(thread=thread, prompt=thread.prompt)
             agent.chat(message.content)
             return redirect("thread_detail", pk=thread.pk)
@@ -297,9 +339,48 @@ def new_message(request, pk):
             print(thread_form.errors)
     else:
         form = MessageForm()
-        thread_form = ThreadForm(instance=thread)  # Pass the current thread instance
+        thread_form = ThreadForm(instance=thread)
     return render(
         request,
         "chat/new_message.html",
         {"form": form, "thread_form": thread_form, "thread": thread},
     )
+
+
+# def create_message(request):
+#     if request.method == 'POST':
+#         data = json.loads(request.body)
+#         thread_id = data.get('threadId')
+#         content = data.get('content')
+        
+#         thread = get_object_or_404(Thread, id=thread_id, user=request.user)
+        
+#         # Check if this is the first message in the thread
+#         if thread.message_set.count() == 0:
+#             # Generate thread name based on the first prompt
+#             try:
+#                 response = client.chat.completions.create(
+#                     model="gpt-3.5-turbo",
+#                     messages=[
+#                         {"role": "system", "content": "Generate a brief 27-28 character description of the following conversation starter. Make it concise but meaningful."},
+#                         {"role": "user", "content": content}
+#                     ],
+#                     max_tokens=50,
+#                     temperature=0.7
+#                 )
+#                 new_thread_name = response.choices[0].message.content.strip()
+#                 # Update thread name
+#                 thread.name = new_thread_name
+#                 thread.save()
+#             except Exception as e:
+#                 logger.error(f"Error generating thread name: {e}")
+#                 # Keep default name if generation fails
+#                 pass
+
+#         # Create the message
+#         message = Message.objects.create(
+#             thread=thread,
+#             role='user',
+#             content=content
+#         )
+        
