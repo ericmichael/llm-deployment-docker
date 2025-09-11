@@ -25,5 +25,10 @@ urlpatterns = [
         views.openai_api_completions_passthrough,
         name="openai_api_completions_passthrough",
     ),
+    path(
+        "api/v1/responses",
+        views.openai_api_responses_passthrough,
+        name="openai_api_responses_passthrough",
+    ),
     path("settings/", views.developer_settings, name="settings"),
 ]

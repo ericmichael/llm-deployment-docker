@@ -51,6 +51,79 @@ class BearerAuthentication(BaseAuthentication):
 @api_view(["POST"])
 @authentication_classes([BearerAuthentication])
 @permission_classes([IsAuthenticated])
+def openai_api_responses_passthrough(request):
+    """
+    Passthrough to the OpenAI/Azure OpenAI Responses API.
+
+    - Azure endpoint: {AZURE_OPENAI_ENDPOINT}/openai/responses?api-version={OPENAI_API_VERSION}
+    - OpenAI endpoint: https://api.openai.com/v1/responses
+
+    Supports streaming when the request body sets `stream: true`.
+    """
+    request_data = request.data
+    request_headers = request.META
+
+    # Check if streaming is requested
+    is_streaming = False
+    try:
+        # request.data may be QueryDict or dict-like; be defensive
+        is_streaming = bool(request_data.get("stream", False))
+    except Exception:
+        is_streaming = False
+
+    # Determine the API key and endpoint based on configuration
+    if settings.OPENAI_API_TYPE == "azure":
+        api_key = settings.AZURE_OPENAI_API_KEY
+        api_version = settings.OPENAI_API_VERSION
+        endpoint = f"{settings.AZURE_OPENAI_ENDPOINT}/openai/responses?api-version={api_version}"
+        headers = {
+            "Content-Type": request_headers.get("CONTENT_TYPE", "application/json"),
+            "api-key": api_key,
+        }
+        # Ensure correct Accept header for streaming
+        if is_streaming:
+            headers["Accept"] = "text/event-stream"
+    else:
+        api_key = settings.OPENAI_API_KEY
+        endpoint = "https://api.openai.com/v1/responses"
+        headers = {
+            "Content-Type": request_headers.get("CONTENT_TYPE", "application/json"),
+            "Authorization": f"Bearer {api_key}",
+        }
+        if is_streaming:
+            headers["Accept"] = "text/event-stream"
+
+    if is_streaming:
+        def generate():
+            with requests.post(
+                endpoint,
+                json=request_data,
+                headers=headers,
+                stream=True,
+            ) as response:
+                for chunk in response.iter_lines():
+                    if chunk:
+                        decoded_chunk = chunk.decode("utf-8")
+                        # Prefix with data: if not already present for SSE formatting
+                        if decoded_chunk.strip() and not decoded_chunk.startswith("data:"):
+                            yield f"data: {decoded_chunk}\n\n"
+                        else:
+                            yield f"{decoded_chunk}\n\n"
+                # Ensure final closing event
+                yield "data: [DONE]\n\n"
+
+        return StreamingHttpResponse(generate(), content_type="text/event-stream")
+    else:
+        response = requests.post(
+            endpoint,
+            json=request_data,
+            headers=headers,
+        )
+        return Response(response.json(), status=response.status_code)
+
+@api_view(["POST"])
+@authentication_classes([BearerAuthentication])
+@permission_classes([IsAuthenticated])
 def openai_api_chat_completions_passthrough(request):
     # Get the request data and headers
     request_data = request.data
