@@ -94,6 +94,9 @@ def openai_api_responses_passthrough(request):
             headers["Accept"] = "text/event-stream"
 
     if is_streaming:
+        # Ensure upstream knows we want SSE
+        headers.setdefault("Accept", "text/event-stream")
+
         def generate():
             with requests.post(
                 endpoint,
@@ -102,15 +105,10 @@ def openai_api_responses_passthrough(request):
                 stream=True,
             ) as response:
                 for chunk in response.iter_lines():
-                    if chunk:
-                        decoded_chunk = chunk.decode("utf-8")
-                        # Prefix with data: if not already present for SSE formatting
-                        if decoded_chunk.strip() and not decoded_chunk.startswith("data:"):
-                            yield f"data: {decoded_chunk}\n\n"
-                        else:
-                            yield f"{decoded_chunk}\n\n"
-                # Ensure final closing event
-                yield "data: [DONE]\n\n"
+                    if chunk is None:
+                        continue
+                    # Simply pass through upstream SSE lines unchanged
+                    yield chunk.decode("utf-8") + "\n"
 
         return StreamingHttpResponse(generate(), content_type="text/event-stream")
     else:
@@ -156,13 +154,16 @@ def openai_api_chat_completions_passthrough(request):
 
     if is_streaming:
         # Stream the response
+        # Ensure upstream knows we want SSE
+        headers.setdefault("Accept", "text/event-stream")
+
         def generate():
             # Forward the request to the appropriate API
             with requests.post(
                 endpoint,
                 json=request_data,
                 headers=headers,
-                stream=True
+                stream=True,
             ) as response:
                 for chunk in response.iter_lines():
                     if chunk:
