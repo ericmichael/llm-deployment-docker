@@ -1,8 +1,10 @@
 import requests
-import os
 import json
+import logging
+import time
+import uuid
 from .ai.agent import Agent  # Import the Agent class from the current app directory
-from .models import Thread, Message
+from .models import Thread
 from .forms import MessageForm, ThreadForm
 from .forms import CustomUserAuthenticationForm
 from django.shortcuts import render, redirect, get_object_or_404
@@ -23,6 +25,9 @@ from rest_framework.authentication import BaseAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import AuthenticationFailed
+
+
+logger = logging.getLogger(__name__)
 
 
 class CustomLoginView(LoginView):
@@ -55,13 +60,29 @@ def openai_api_responses_passthrough(request):
     """
     Passthrough to the OpenAI/Azure OpenAI Responses API.
 
-    - Azure endpoint: {AZURE_OPENAI_ENDPOINT}/openai/responses?api-version={OPENAI_API_VERSION}
+    - Azure endpoint: {AZURE_OPENAI_ENDPOINT}/openai/responses?api-version={AZURE_OPENAI_INFERENCE_API_VERSION}
     - OpenAI endpoint: https://api.openai.com/v1/responses
 
     Supports streaming when the request body sets `stream: true`.
     """
     request_data = request.data
     request_headers = request.META
+
+    # Debug toggles
+    debug_enabled = getattr(settings, "DEBUG_OPENAI_PASSTHROUGH", False)
+    debug_param = request.GET.get("debug", "").lower() in ("1", "true", "yes", "on")
+    debug = bool(debug_enabled or debug_param)
+    request_id = request.META.get("HTTP_X_REQUEST_ID", str(uuid.uuid4()))
+
+    def _sanitize_headers(h: dict) -> dict:
+        redacted = {}
+        for k, v in h.items():
+            key = str(k).lower()
+            if key in ("authorization", "api-key", "x-api-key"):
+                redacted[k] = "[REDACTED]"
+            else:
+                redacted[k] = v
+        return redacted
 
     # Check if streaming is requested
     is_streaming = False
@@ -74,7 +95,7 @@ def openai_api_responses_passthrough(request):
     # Determine the API key and endpoint based on configuration
     if settings.OPENAI_API_TYPE == "azure":
         api_key = settings.AZURE_OPENAI_API_KEY
-        api_version = settings.OPENAI_API_VERSION
+        api_version = settings.AZURE_OPENAI_INFERENCE_API_VERSION
         endpoint = f"{settings.AZURE_OPENAI_ENDPOINT}/openai/responses?api-version={api_version}"
         headers = {
             "Content-Type": request_headers.get("CONTENT_TYPE", "application/json"),
@@ -93,31 +114,129 @@ def openai_api_responses_passthrough(request):
         if is_streaming:
             headers["Accept"] = "text/event-stream"
 
+    # Log outgoing request metadata
+    if debug:
+        try:
+            logger.debug(
+                "[ResponsesPassthrough][%s] Outgoing POST -> %s | stream=%s | headers=%s | payload.preview=%s",
+                request_id,
+                endpoint,
+                is_streaming,
+                _sanitize_headers(headers),
+                json.dumps(request_data)[:2048]
+                if not isinstance(request_data, (str, bytes))
+                else str(request_data)[:2048],
+            )
+        except Exception:
+            logger.debug(
+                "[ResponsesPassthrough][%s] (payload preview unavailable)", request_id
+            )
+
     if is_streaming:
         # Ensure upstream knows we want SSE
         headers.setdefault("Accept", "text/event-stream")
 
         def generate():
+            start = time.monotonic()
             with requests.post(
                 endpoint,
                 json=request_data,
                 headers=headers,
                 stream=True,
             ) as response:
-                for chunk in response.iter_lines():
+                # If upstream responded with an error status, don't stream; return the error body instead
+                if response.status_code >= 400:
+                    try:
+                        body = response.json()
+                        text = json.dumps(body)
+                    except Exception:
+                        text = response.text
+
+                    if debug:
+                        logger.debug(
+                            "[ResponsesPassthrough][%s] Upstream ERROR %s in %.3fs | headers=%s | body.preview=%s",
+                            request_id,
+                            response.status_code,
+                            time.monotonic() - start,
+                            _sanitize_headers(response.headers),
+                            text[:2048],
+                        )
+                    # Yield one error event as SSE so client still sees something useful
+                    yield f"event: error\ndata: {text}\n\n"
+                    yield "event: done\ndata: [DONE]\n\n"
+                    return
+
+                if debug:
+                    logger.debug(
+                        "[ResponsesPassthrough][%s] Upstream CONNECTED %s in %.3fs | headers=%s",
+                        request_id,
+                        response.status_code,
+                        time.monotonic() - start,
+                        _sanitize_headers(response.headers),
+                    )
+                for i, chunk in enumerate(response.iter_lines()):
                     if chunk is None:
                         continue
-                    # Simply pass through upstream SSE lines unchanged
-                    yield chunk.decode("utf-8") + "\n"
+                    line = chunk.decode("utf-8")
+                    if debug and i == 0:
+                        logger.debug(
+                            "[ResponsesPassthrough][%s] First SSE line: %s",
+                            request_id,
+                            line[:512],
+                        )
+                    # Pass through upstream SSE lines unchanged
+                    yield line + "\n"
 
-        return StreamingHttpResponse(generate(), content_type="text/event-stream")
+        resp = StreamingHttpResponse(generate(), content_type="text/event-stream")
+        if debug:
+            resp["X-Debug-Request-Id"] = request_id
+            resp["X-Debug-Passthrough"] = "responses-sse"
+        return resp
     else:
+        start = time.monotonic()
         response = requests.post(
             endpoint,
             json=request_data,
             headers=headers,
         )
-        return Response(response.json(), status=response.status_code)
+        elapsed = time.monotonic() - start
+
+        # Attempt JSON; fallback to text
+        try:
+            body = response.json()
+            is_json = True
+        except Exception:
+            body = response.text
+            is_json = False
+
+        if debug:
+            logger.debug(
+                "[ResponsesPassthrough][%s] Upstream %s in %.3fs | ct=%s | body.preview=%s",
+                request_id,
+                response.status_code,
+                elapsed,
+                response.headers.get("Content-Type"),
+                (json.dumps(body) if is_json else str(body))[:2048],
+            )
+
+        if is_json:
+            resp = Response(body, status=response.status_code)
+        else:
+            # Return raw text with upstream content type
+            from django.http import HttpResponse
+
+            resp = HttpResponse(
+                body,
+                status=response.status_code,
+                content_type=response.headers.get("Content-Type", "text/plain"),
+            )
+
+        if debug:
+            resp["X-Debug-Request-Id"] = request_id
+            resp["X-Debug-Passthrough"] = "responses-json"
+            resp["X-Upstream-Status"] = str(response.status_code)
+        return resp
+
 
 @api_view(["POST"])
 @authentication_classes([BearerAuthentication])
@@ -132,7 +251,7 @@ def openai_api_chat_completions_passthrough(request):
         "model", None
     )  # Provide a default if not specified
     api_version = settings.OPENAI_API_VERSION
-    
+
     # Check if streaming is requested
     is_streaming = request_data.get("stream", False)
 
@@ -167,21 +286,20 @@ def openai_api_chat_completions_passthrough(request):
             ) as response:
                 for chunk in response.iter_lines():
                     if chunk:
-                        decoded_chunk = chunk.decode('utf-8')
-                        
+                        decoded_chunk = chunk.decode("utf-8")
+
                         # Add data: prefix for SSE formatting and newlines
-                        if decoded_chunk.strip() and not decoded_chunk.startswith('data:'):
+                        if decoded_chunk.strip() and not decoded_chunk.startswith(
+                            "data:"
+                        ):
                             yield f"data: {decoded_chunk}\n\n"
                         else:
                             yield f"{decoded_chunk}\n\n"
-                
+
                 # Add the final closing event
                 yield "data: [DONE]\n\n"
-                
-        return StreamingHttpResponse(
-            generate(),
-            content_type="text/event-stream"
-        )
+
+        return StreamingHttpResponse(generate(), content_type="text/event-stream")
     else:
         # Non-streaming behavior - forward the request and return complete response
         response = requests.post(
@@ -254,7 +372,7 @@ pip install -U python-dotenv
     """
 
     code_block_env = f"""
-OPENAI_API_BASE={api_base}
+OPENAI_BASE_URL={api_base}
 OPENAI_API_KEY={api_key}
 """
 
@@ -266,7 +384,7 @@ from dotenv import load_dotenv
 load_dotenv()  # take environment variables from .env
 
 client = OpenAI(
-    base_url=os.environ.get("OPENAI_API_BASE"),
+    base_url=os.environ.get("OPENAI_BASE_URL"),
     api_key=os.environ.get("OPENAI_API_KEY"),
 )
 

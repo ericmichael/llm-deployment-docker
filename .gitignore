@@ -181,3 +181,6 @@ staticfiles/
 *.sqlite3
 
 demoapp.py
+
+# Vendored external repositories (ignored)
+vendor/

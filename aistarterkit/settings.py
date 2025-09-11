@@ -191,6 +191,19 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # Azure OpenAI Settings
 AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
+# The Azure Inference (Responses/Assistants/Vector Stores) API version.
+# Default to the current preview that defines the /responses endpoint.
+AZURE_OPENAI_INFERENCE_API_VERSION = os.getenv(
+    "AZURE_OPENAI_INFERENCE_API_VERSION", "2025-04-01-preview"
+)
+
+# Passthrough debugging (adds verbose server logs and optional debug headers)
+DEBUG_OPENAI_PASSTHROUGH = os.getenv("DEBUG_OPENAI_PASSTHROUGH", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 AUTH_USER_MODEL = "chat.CustomUser"
 
@@ -199,3 +212,44 @@ DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME")
 DEFAULT_ADMIN_EMAIL = os.getenv("DEFAULT_ADMIN_EMAIL")
 
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD")
+
+# ------------------------------------------------------------
+# Logging configuration for passthrough debugging
+# ------------------------------------------------------------
+# This routes DEBUG logs from chat.views to the console so that
+# DEBUG_OPENAI_PASSTHROUGH (or ?debug=1) messages are visible.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "simple": {
+            "format": "[%(levelname)s] %(asctime)s %(name)s: %(message)s",
+            "datefmt": "%H:%M:%S",
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "simple",
+        }
+    },
+    "loggers": {
+        # Our passthrough endpoint logs here
+        "chat.views": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        # Keep request libraries quieter unless there are warnings/errors
+        "requests": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+        "urllib3": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+    },
+}
