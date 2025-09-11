@@ -1,0 +1,11 @@
+{% load markdown_filters %}
+<div class="flex gap-4 p-6 border-b border-gray-200 text-gray-800 {% if role == 'user' %}bg-gray-50{% endif %}">
+    {% if role != 'user' %}
+    <i class="fas fa-robot w-6 text-lg text-indigo-400"></i>
+    {% else %}
+    <i class="fas fa-user w-6 text-lg text-green-400"></i>
+    {% endif %}
+    <div class="message-content">
+        {{ content|markdown_to_html|enhance_markdown_html|safe }}
+    </div>
+</div>
