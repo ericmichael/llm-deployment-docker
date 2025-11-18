@@ -168,6 +168,10 @@ The application's functionality will be available through its user interface and
 
 The project includes a deployment script that automates the process of deploying the application to Azure and setting up GitHub Actions secrets. The deployment script uses a YAML configuration file to manage deployment settings.
 
+### Build Process
+
+The JavaScript bundle (`assets/js/bundle.js`) is automatically generated during the Docker build process and should **not** be committed to version control. The Dockerfile handles running `npm install` and `npm run build` to create the production bundle. For local development, run `npm run build` manually after making changes to JavaScript files.
+
 ### Deployment Dependencies
 
 Before running the deployment script, ensure that the following dependencies are installed and configured:
