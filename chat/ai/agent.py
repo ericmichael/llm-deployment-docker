@@ -9,19 +9,15 @@ Typical usage example:
 
 import os
 import json
-from openai import OpenAI, AzureOpenAI
+from openai import OpenAI
 import re
 from django.conf import settings
 from ..models import Message
 
-# Initialize the OpenAI client
-if settings.OPENAI_API_TYPE == "azure":
-    client = AzureOpenAI(
-        api_version=settings.OPENAI_API_VERSION,
-        azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-    )
-else:
-    client = OpenAI()
+client = OpenAI(
+    base_url=settings.LITELLM_BASE_URL,
+    api_key=settings.LITELLM_SERVICE_KEY,
+)
 
 
 class Agent:
@@ -69,7 +65,10 @@ class Agent:
         return history
 
     def _get_ai_reply(
-        self, message, model="gpt-35-turbo-16k", system_message=None, temperature=0
+        self,
+        message,
+        model=None,
+        system_message=None,
     ):
         """Gets a response from the AI model.
 
@@ -77,16 +76,36 @@ class Agent:
             message: A string containing the user's input.
             model: A string containing the name of the AI model.
             system_message: A string containing a system message.
-            temperature: A float used to control the randomness of the AI's output.
 
         Returns:
             A string containing the AI's response.
         """
         messages = self._prepare_messages(message, system_message)
+        target_model = self._resolve_model(model)
+        temperature = self._resolve_temperature()
         completion = client.chat.completions.create(
-            model=model, messages=messages, temperature=temperature
+            model=target_model,
+            messages=messages,
+            temperature=temperature,
         )
         return completion.choices[0].message.content.strip()
+
+    def _resolve_model(self, override):
+        if override:
+            return override
+        allowed_models = getattr(settings, "LITELLM_MODEL_LIST", None)
+        if not allowed_models:
+            allowed_models = [settings.LITELLM_DEFAULT_MODEL]
+        thread_model = getattr(self.thread, "model", None)
+        if thread_model and thread_model in allowed_models:
+            return thread_model
+        return settings.LITELLM_DEFAULT_MODEL
+
+    def _resolve_temperature(self):
+        thread_temperature = getattr(self.thread, "temperature", None)
+        if thread_temperature is None:
+            return 1
+        return thread_temperature
 
     def _prepare_messages(self, message, system_message):
         """Prepares the messages for the AI model.

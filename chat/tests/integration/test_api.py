@@ -19,7 +19,7 @@ class OpenAIAPITest(APITestCase):
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": "Who won the world series in 2020?"}
             ],
-            "model": "gpt-3.5-turbo"
+            "model": "gpt-5"
         }
 
         # Make a POST request to the API

@@ -2,7 +2,7 @@ interactions:
 - request:
     body: '{"messages": [{"role": "system", "content": "You are a helpful assistant."},
       {"role": "user", "content": "Who won the world series in 2020?"}], "model":
-      "gpt-3.5-turbo"}'
+      "gpt-5"}'
     headers:
       Accept:
       - '*/*'
@@ -11,29 +11,30 @@ interactions:
       Connection:
       - keep-alive
       Content-Length:
-      - '169'
+      - '161'
       Content-Type:
       - application/json
       User-Agent:
-      - python-requests/2.31.0
+      - python-requests/2.32.5
     method: POST
     uri: https://api.openai.com/v1/chat/completions
   response:
     body:
-      string: !!binary |
-        H4sIAAAAAAAAA1SQP2/CMBDF93yKk2eCEsLfbKgdOjBUoipDVSGTXBJTx2fZh9qC+O6VQyDqcsN7
-        fu9+50sEIFQpchBFI7lorY6Xx92iyuavq+3705mn62qjFk0zfZGruTmLUUjQ4YgF31PjglqrkRWZ
-        m104lIyhNV0ks+VsucrSzmipRB1iteU4G89iPrkDxck8zfpkQ6pAL3L4iAAALt0MjKbEH5FDMror
-        LXovaxT54xGAcKSDIqT3yrM0LEaDWZBhNB32W4OwIQ9rU6NGD89U1ug8fJMBbhB25HQJW3QKPSgD
-        k2SSjEVfdX0waKqto0PgNSetH3qljPLN3qH0ZMI+z2Rv8WsE8NndevqHL6yj1vKe6QtNKJwsbnVi
-        +N3BTLPeZGKpB32aRD2f8L+esd1XytTorFPd4YEyukZ/AAAA//8DADzkY+b3AQAA
+      string: "{\n  \"id\": \"chatcmpl-CdM7fgy9PfHhRGR9KbAMxSmLcmArs\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1763495867,\n  \"model\": \"gpt-5-2025-08-07\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"The Los Angeles Dodgers. They defeated
+        the Tampa Bay Rays in six games.\",\n        \"refusal\": null,\n        \"annotations\":
+        []\n      },\n      \"finish_reason\": \"stop\"\n    }\n  ],\n  \"usage\":
+        {\n    \"prompt_tokens\": 26,\n    \"completion_tokens\": 88,\n    \"total_tokens\":
+        114,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\": 0,\n      \"audio_tokens\":
+        0\n    },\n    \"completion_tokens_details\": {\n      \"reasoning_tokens\":
+        64,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\": 0,\n
+        \     \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": null\n}\n"
     headers:
-      CF-Cache-Status:
-      - DYNAMIC
       CF-RAY:
-      - 84915a2e0f9428e4-DFW
-      Cache-Control:
-      - no-cache, must-revalidate
+      - 9a0a09efd81de779-DFW
       Connection:
       - keep-alive
       Content-Encoding:
@@ -41,45 +42,53 @@ interactions:
       Content-Type:
       - application/json
       Date:
-      - Sun, 21 Jan 2024 17:42:11 GMT
+      - Tue, 18 Nov 2025 19:57:49 GMT
       Server:
       - cloudflare
       Set-Cookie:
-      - __cf_bm=K5qXsKgte2ojSE6wxTPLZLgkvbixsvTC.K2kGHAVKcY-1705858931-1-Ad30nHsD9X1z2rZyh97zEr65ZPsqJSSlqvP7wp1CWUUHvS/4hK9wa7ayjOHyq7uj0KL14pkFBfMRsDs0ND9ftTg=;
-        path=/; expires=Sun, 21-Jan-24 18:12:11 GMT; domain=.api.openai.com; HttpOnly;
+      - __cf_bm=txgHuW3VS_Urd_.Ka75o_qlrU7POWj7fv2hNkCNNbHE-1763495869-1.0.1.1-fiX7uZHEnX7xE0c_h50Kr_6ptcDulK5kOQYdjwYrgylIcqXbZB6E7HLkzLai2dPOZQ0PbpCooCjp6UeDSo_XQZYWDqgtVMZ2pCUTbBGXq5s;
+        path=/; expires=Tue, 18-Nov-25 20:27:49 GMT; domain=.api.openai.com; HttpOnly;
         Secure; SameSite=None
-      - _cfuvid=qu8PVEgQFhOBvS73qBLEMYI0ruBIEhKgKfdRqBoPCyE-1705858931367-0-604800000;
+      - _cfuvid=rxcH3yu91ZsNVdsLqnODq2gwBLs5aTumdMQmlL0lQzg-1763495869589-0.0.1.1-604800000;
         path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
       Transfer-Encoding:
       - chunked
-      access-control-allow-origin:
-      - '*'
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
       alt-svc:
       - h3=":443"; ma=86400
-      openai-model:
-      - gpt-3.5-turbo-0613
+      cf-cache-status:
+      - DYNAMIC
       openai-organization:
       - eightytwentylabs
       openai-processing-ms:
-      - '418'
+      - '2535'
+      openai-project:
+      - proj_lolRwA9UN0iczul3THcmE6D6
       openai-version:
       - '2020-10-01'
-      strict-transport-security:
-      - max-age=15724800; includeSubDomains
+      x-envoy-upstream-service-time:
+      - '2693'
+      x-openai-proxy-wasm:
+      - v0.1
       x-ratelimit-limit-requests:
-      - '10000'
+      - '15000'
       x-ratelimit-limit-tokens:
-      - '1000000'
+      - '40000000'
       x-ratelimit-remaining-requests:
-      - '9999'
+      - '14999'
       x-ratelimit-remaining-tokens:
-      - '999965'
+      - '39999980'
       x-ratelimit-reset-requests:
-      - 6ms
+      - 4ms
       x-ratelimit-reset-tokens:
-      - 2ms
+      - 0s
       x-request-id:
-      - 85be5dd0df3086f5cacdaf78066565a3
+      - req_1fd1e1fbdace46a4ba34267cd225d6b6
     status:
       code: 200
       message: OK

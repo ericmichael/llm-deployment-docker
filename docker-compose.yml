@@ -5,6 +5,8 @@ services:
       context: .
       dockerfile: Dockerfile
     command: bash -c "python manage.py migrate && gunicorn aistarterkit.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+    depends_on:
+      - litellm-proxy
     ports:
       - "8000:8000"
     volumes:
@@ -14,6 +16,19 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_API_BASE=${OPENAI_API_BASE}
+      - LITELLM_BASE_URL=${LITELLM_BASE_URL:-http://litellm-proxy:4000}
+      - LITELLM_SERVICE_KEY=${LITELLM_SERVICE_KEY}
       - DEFAULT_ADMIN_EMAIL=${DEFAULT_ADMIN_EMAIL}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
       - SQLITE3_STORAGE_PATH=/home/user/app/db/sqlite3
+  litellm-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/bin/sh", "-c"]
+    command: "litellm --config config/litellm-config.yaml --host 0.0.0.0 --port 4000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LITELLM_MASTER_KEY=${LITELLM_SERVICE_KEY}
+    ports:
+      - "4000:4000"
