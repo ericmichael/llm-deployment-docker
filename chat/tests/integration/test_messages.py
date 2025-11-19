@@ -2,7 +2,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 from chat.models import Thread, Message
-import vcr
+from chat.tests.unit.vcr_config import vcr
 
 class MessageIntegrationTestCase(TestCase):
     def setUp(self):

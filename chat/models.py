@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from django.conf import settings
 
 
 class CustomUserManager(BaseUserManager):
@@ -41,18 +42,25 @@ class CustomUser(AbstractUser):
         return self.email
 
 
+def _thread_model_choices():
+    configured = getattr(settings, "LITELLM_MODEL_LIST", [])
+    seen = []
+    for value in configured:
+        if value and value not in seen:
+            seen.append(value)
+    if not seen:
+        seen.append(getattr(settings, "LITELLM_DEFAULT_MODEL", "gpt-5"))
+    return [(value, value) for value in seen]
+
+
 class Thread(models.Model):
-    MODEL_CHOICES = [
-        ("gpt-35-turbo-16k", "gpt-35-turbo-16k"),
-        ("gpt-4o", "gpt-4o"),
-        ("gpt-4o-mini", "gpt-4o-mini"),
-    ]
+    MODEL_CHOICES = _thread_model_choices()
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     name = models.CharField(max_length=200, default="New Thread")
     model = models.CharField(
-        max_length=20, choices=MODEL_CHOICES, default="gpt-4o-mini"
+        max_length=100, choices=MODEL_CHOICES, default=settings.LITELLM_DEFAULT_MODEL
     )
-    temperature = models.FloatField(default=0)
+    temperature = models.FloatField(default=1)
     prompt = models.TextField()
     created_at = models.DateTimeField(default=timezone.now)  # Add this field
 

@@ -120,6 +120,52 @@ Before you can install the JavaScript dependencies, you need to install Node.js 
     python manage.py runserver
     ```
 
+## LiteLLM Proxy (Stateless)
+
+This project now routes all OpenAI-compatible traffic through a stateless LiteLLM proxy. LiteLLM runs alongside Django and forwards requests to your configured providers without requiring an additional database.
+
+1. Ensure `OPENAI_API_KEY` is set; LiteLLM uses this to call upstream providers.
+2. Set `LITELLM_SERVICE_KEY` to any non-empty value. Django uses this value when authenticating to the LiteLLM proxy, and the same value is passed to the proxy as `LITELLM_MASTER_KEY`. If unset during local tests, Django falls back to `OPENAI_API_KEY` or a built-in `test-litellm-service-key` so requests are never anonymous.
+3. Optionally define `LITELLM_DEFAULT_MODEL` (defaults to `gpt-5`) to control which model Django requests when talking to the proxy.
+4. Optionally set `LITELLM_MODEL_LIST` to a comma-separated list of model aliases you expose through LiteLLM. This list powers the Thread model dropdowns so users can only select models the proxy serves. When omitted it defaults to the single `LITELLM_DEFAULT_MODEL` entry.
+5. Export `LITELLM_MASTER_KEY` (use the same value as `LITELLM_SERVICE_KEY`).
+6. Launch LiteLLM locally after installing requirements:
+
+    ```bash
+    litellm --config config/litellm-config.yaml --host 0.0.0.0 --port 4000
+    ```
+
+7. Point Django at the proxy by exporting `LITELLM_BASE_URL=http://127.0.0.1:4000` before starting `python manage.py runserver`.
+
+The provided `docker-compose.yml` starts both services (Django + LiteLLM) automatically. Override `LITELLM_BASE_URL` if your proxy runs elsewhere (for example, a remote server). For legacy direct-to-OpenAI usage or for running tests without the proxy, set `LITELLM_BASE_URL=https://api.openai.com/v1` so the existing VCR fixtures remain valid.
+
+### Running Tests Against LiteLLM
+
+Use the same stateless LiteLLM proxy while exercising Django's test suite to ensure every request flows through the proxy just like production:
+
+1. `source .env` (or export the required env vars) then `unset OPENAI_API_KEY` if you want LiteLLM to rely solely on Azure/provider-specific keys defined in its config.
+2. Start the proxy locally with the shared config and master key:
+
+    ```bash
+    LITELLM_MASTER_KEY=$LITELLM_SERVICE_KEY litellm --config config/litellm-config.yaml --host 0.0.0.0 --port 4000
+    ```
+
+3. In another shell, point Django at the proxy while running tests:
+
+    ```bash
+    LITELLM_BASE_URL=http://127.0.0.1:4000 python manage.py test chat.tests.integration
+    ```
+
+The integration cassettes continue to short-circuit real HTTP calls, but running the proxy in parallel verifies that every server-side request carries the `LITELLM_SERVICE_KEY` authorization header.
+
+Start everything with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+This runs the LiteLLM proxy on port 4000 and the Django app on port 8000, sharing the same `.env` settings you already maintain.
+
 ## Usage
 
 Once you have set up the project following the instructions in the Setup section, you can start the Django development server to begin using the application.
@@ -167,6 +213,10 @@ The application's functionality will be available through its user interface and
 ## Deployment
 
 The project includes a deployment script that automates the process of deploying the application to Azure and setting up GitHub Actions secrets. The deployment script uses a YAML configuration file to manage deployment settings.
+
+### Build Process
+
+The JavaScript bundle (`assets/js/bundle.js`) is automatically generated during the Docker build process and should **not** be committed to version control. The Dockerfile handles running `npm install` and `npm run build` to create the production bundle. For local development, run `npm run build` manually after making changes to JavaScript files.
 
 ### Deployment Dependencies
 

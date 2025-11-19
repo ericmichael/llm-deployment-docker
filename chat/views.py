@@ -34,6 +34,29 @@ class CustomLoginView(LoginView):
     authentication_form = CustomUserAuthenticationForm
 
 
+def _litellm_base_url():
+    base = getattr(settings, "LITELLM_BASE_URL", "https://api.openai.com/v1")
+    if not base:
+        return "https://api.openai.com/v1"
+    return base.rstrip("/")
+
+
+def _litellm_url(path: str) -> str:
+    return f"{_litellm_base_url()}{path}"
+
+
+def _litellm_headers(request_headers, is_streaming=False):
+    headers = {
+        "Content-Type": request_headers.get("CONTENT_TYPE", "application/json"),
+    }
+    service_key = getattr(settings, "LITELLM_SERVICE_KEY", None)
+    if service_key:
+        headers["Authorization"] = f"Bearer {service_key}"
+    if is_streaming:
+        headers["Accept"] = "text/event-stream"
+    return headers
+
+
 class BearerAuthentication(BaseAuthentication):
     def authenticate(self, request):
         header = request.META.get("HTTP_AUTHORIZATION")
@@ -58,10 +81,7 @@ class BearerAuthentication(BaseAuthentication):
 @permission_classes([IsAuthenticated])
 def openai_api_responses_passthrough(request):
     """
-    Passthrough to the OpenAI/Azure OpenAI Responses API.
-
-    - Azure endpoint: {AZURE_OPENAI_ENDPOINT}/openai/responses?api-version={AZURE_OPENAI_INFERENCE_API_VERSION}
-    - OpenAI endpoint: https://api.openai.com/v1/responses
+    Passthrough to the configured LiteLLM/OpenAI-compatible Responses API.
 
     Supports streaming when the request body sets `stream: true`.
     """
@@ -92,27 +112,8 @@ def openai_api_responses_passthrough(request):
     except Exception:
         is_streaming = False
 
-    # Determine the API key and endpoint based on configuration
-    if settings.OPENAI_API_TYPE == "azure":
-        api_key = settings.AZURE_OPENAI_API_KEY
-        api_version = settings.AZURE_OPENAI_INFERENCE_API_VERSION
-        endpoint = f"{settings.AZURE_OPENAI_ENDPOINT}/openai/responses?api-version={api_version}"
-        headers = {
-            "Content-Type": request_headers.get("CONTENT_TYPE", "application/json"),
-            "api-key": api_key,
-        }
-        # Ensure correct Accept header for streaming
-        if is_streaming:
-            headers["Accept"] = "text/event-stream"
-    else:
-        api_key = settings.OPENAI_API_KEY
-        endpoint = "https://api.openai.com/v1/responses"
-        headers = {
-            "Content-Type": request_headers.get("CONTENT_TYPE", "application/json"),
-            "Authorization": f"Bearer {api_key}",
-        }
-        if is_streaming:
-            headers["Accept"] = "text/event-stream"
+    endpoint = _litellm_url("/responses")
+    headers = _litellm_headers(request_headers, is_streaming=is_streaming)
 
     # Log outgoing request metadata
     if debug:
@@ -246,30 +247,9 @@ def openai_api_chat_completions_passthrough(request):
     request_data = request.data
     request_headers = request.META
 
-    # Extract the deployment name and API version from the request data
-    deployment_name = request_data.get(
-        "model", None
-    )  # Provide a default if not specified
-    api_version = settings.OPENAI_API_VERSION
-
-    # Check if streaming is requested
     is_streaming = request_data.get("stream", False)
-
-    # Determine the API key and endpoint based on configuration
-    if settings.OPENAI_API_TYPE == "azure":
-        api_key = settings.AZURE_OPENAI_API_KEY
-        endpoint = f"{settings.AZURE_OPENAI_ENDPOINT}/openai/deployments/{deployment_name}/chat/completions?api-version={api_version}"
-        headers = {
-            "Content-Type": request_headers.get("CONTENT_TYPE"),
-            "api-key": api_key,
-        }
-    else:
-        api_key = settings.OPENAI_API_KEY
-        endpoint = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Content-Type": request_headers.get("CONTENT_TYPE"),
-            "Authorization": f"Bearer {api_key}",
-        }
+    endpoint = _litellm_url("/chat/completions")
+    headers = _litellm_headers(request_headers, is_streaming=is_streaming)
 
     if is_streaming:
         # Stream the response
@@ -277,7 +257,6 @@ def openai_api_chat_completions_passthrough(request):
         headers.setdefault("Accept", "text/event-stream")
 
         def generate():
-            # Forward the request to the appropriate API
             with requests.post(
                 endpoint,
                 json=request_data,
@@ -320,26 +299,8 @@ def openai_api_completions_passthrough(request):
     request_data = request.data
     request_headers = request.META
 
-    # Extract the deployment name and API version from the request data
-    deployment_name = request_data.get("model")
-    api_version = settings.OPENAI_API_VERSION
-
-    # Determine the API key and endpoint based on configuration
-    if settings.OPENAI_API_TYPE == "azure":
-        api_key = settings.AZURE_OPENAI_API_KEY
-
-        endpoint = f"{settings.AZURE_OPENAI_ENDPOINT}/openai/deployments/{deployment_name}/completions?api-version={api_version}"
-        headers = {
-            "Content-Type": request_headers.get("CONTENT_TYPE"),
-            "api-key": api_key,
-        }
-    else:
-        api_key = settings.OPENAI_API_KEY
-        endpoint = "https://api.openai.com/v1/completions"
-        headers = {
-            "Content-Type": request_headers.get("CONTENT_TYPE"),
-            "Authorization": f"Bearer {api_key}",
-        }
+    endpoint = _litellm_url("/completions")
+    headers = _litellm_headers(request_headers)
 
     # Forward the request to the appropriate API
     response = requests.post(

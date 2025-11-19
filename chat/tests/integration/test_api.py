@@ -1,8 +1,8 @@
-import vcr
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework.test import APITestCase
 from rest_framework.authtoken.models import Token
+from chat.tests.unit.vcr_config import vcr
 
 class OpenAIAPITest(APITestCase):
     def setUp(self):
@@ -19,7 +19,7 @@ class OpenAIAPITest(APITestCase):
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": "Who won the world series in 2020?"}
             ],
-            "model": "gpt-3.5-turbo"
+            "model": "gpt-5"
         }
 
         # Make a POST request to the API
