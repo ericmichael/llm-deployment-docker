@@ -117,9 +117,6 @@ os.makedirs(sqlite_storage_path, exist_ok=True)
 db_path = Path(sqlite_storage_path) / "db.sqlite3"
 
 
-CHROMADB_STORAGE_PATH = os.getenv("CHROMADB_STORAGE_PATH")
-
-
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",

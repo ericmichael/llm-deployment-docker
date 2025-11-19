@@ -16,7 +16,6 @@ RUN curl -sL https://deb.nodesource.com/setup_$NODE_MAJOR.x | bash -
 
 # Install any needed packages
 RUN apt-get -y update && \
-    apt-get install -y ffmpeg libavcodec-extra && \
     apt-get install -y nodejs npm && \
     rm -rf /var/lib/apt/lists/*
 

@@ -10,7 +10,6 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./db/chroma:/home/user/app/db/chroma
       - ./db/duckdb:/home/user/app/db/duckdb
       - ./db/sqlite3:/home/user/app/db/sqlite3
     environment:
