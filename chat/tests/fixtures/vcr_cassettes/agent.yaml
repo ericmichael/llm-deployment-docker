@@ -6,8 +6,6 @@ interactions:
     headers:
       Accept:
       - '*/*'
-      Accept-Encoding:
-      - gzip, deflate
       Connection:
       - keep-alive
       Content-Length:
@@ -44,16 +42,12 @@ interactions:
       - no-cache, must-revalidate
       Connection:
       - keep-alive
-      Content-Encoding:
-      - gzip
       Content-Type:
       - application/json
       Date:
       - Sun, 21 Jan 2024 17:39:16 GMT
       Server:
       - cloudflare
-      Transfer-Encoding:
-      - chunked
       access-control-allow-origin:
       - '*'
       alt-svc:
@@ -91,8 +85,6 @@ interactions:
     headers:
       accept:
       - application/json
-      accept-encoding:
-      - gzip, deflate
       connection:
       - keep-alive
       content-length:
@@ -127,25 +119,24 @@ interactions:
     method: POST
     uri: https://api.openai.com/v1/chat/completions
   response:
-    content: "{\n  \"id\": \"chatcmpl-Cd9eTKmJFcryG94Dcpy1y7YMPADM7\",\n  \"object\":
-      \"chat.completion\",\n  \"created\": 1763447929,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
-      \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
-      \"assistant\",\n        \"content\": \"Hello! My name is Jarvis. How can I assist
-      you today?\",\n        \"refusal\": null,\n        \"annotations\": []\n      },\n
-      \     \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n    }\n  ],\n
-      \ \"usage\": {\n    \"prompt_tokens\": 26,\n    \"completion_tokens\": 14,\n
-      \   \"total_tokens\": 40,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
-      0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\": {\n
-      \     \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
-      0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
-      \"default\",\n  \"system_fingerprint\": null\n}\n"
+    body:
+      string: "{\n  \"id\": \"chatcmpl-Cd9eTKmJFcryG94Dcpy1y7YMPADM7\",\n  \"object\":
+        \"chat.completion\",\n  \"created\": 1763447929,\n  \"model\": \"gpt-3.5-turbo-0125\",\n
+        \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+        \"assistant\",\n        \"content\": \"Hello! My name is Jarvis. How can I
+        assist you today?\",\n        \"refusal\": null,\n        \"annotations\":
+        []\n      },\n      \"logprobs\": null,\n      \"finish_reason\": \"stop\"\n
+        \   }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 26,\n    \"completion_tokens\":
+        14,\n    \"total_tokens\": 40,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+        0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\":
+        {\n      \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+        0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+        \"default\",\n  \"system_fingerprint\": null\n}\n"
     headers:
       CF-RAY:
       - 9a057798aa128c80-IAH
       Connection:
       - keep-alive
-      Content-Encoding:
-      - gzip
       Content-Type:
       - application/json
       Date:
@@ -154,8 +145,6 @@ interactions:
       - cloudflare
       Strict-Transport-Security:
       - max-age=31536000; includeSubDomains; preload
-      Transfer-Encoding:
-      - chunked
       X-Content-Type-Options:
       - nosniff
       access-control-expose-headers:
@@ -190,6 +179,106 @@ interactions:
       - 0s
       x-request-id:
       - req_16aecb4ce2ad460c895994751d8a0d4b
+    http_version: HTTP/1.1
+    status_code: 200
+- request:
+    body: '{"messages":[{"role":"system","content":"You are a helpful assistant named
+      Jarvis."},{"role":"user","content":"Hello, what is your name?"}],"model":"gpt-5","temperature":1}'
+    headers:
+      accept:
+      - application/json
+      connection:
+      - keep-alive
+      content-length:
+      - '172'
+      content-type:
+      - application/json
+      cookie:
+      - __cf_bm=PAGr7Ut7z15sjFqnS0I0BZV8dSgbaHDIA61YqNzkzw8-1763510826-1.0.1.1-e7HP2GnCU6hlXWPhYkw.fqDDQh1ylyRkrC0PAFtL8GIr4PKyIn6HyI6uufQQ_xpY5MMt5bPTpv.UTotj3aJxGtUaM9wRam2Oo_h5RAagNIc;
+        _cfuvid=hctMCvJkxXNGmQJrnDmtMgFSj9hgsCPwYqknWd6Kr_4-1763510826645-0.0.1.1-604800000
+      host:
+      - api.openai.com
+      user-agent:
+      - OpenAI/Python 2.8.1
+      x-stainless-arch:
+      - arm64
+      x-stainless-async:
+      - 'false'
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - Linux
+      x-stainless-package-version:
+      - 2.8.1
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.13.7
+    method: POST
+    uri: https://api.openai.com/v1/chat/completions
+  response:
+    content: "{\n  \"id\": \"chatcmpl-CdQ12M3ItqkB4IFUMPBehM77YlHD1\",\n  \"object\":
+      \"chat.completion\",\n  \"created\": 1763510832,\n  \"model\": \"gpt-5-2025-08-07\",\n
+      \ \"choices\": [\n    {\n      \"index\": 0,\n      \"message\": {\n        \"role\":
+      \"assistant\",\n        \"content\": \"I\u2019m Jarvis. How can I help you today?\",\n
+      \       \"refusal\": null,\n        \"annotations\": []\n      },\n      \"finish_reason\":
+      \"stop\"\n    }\n  ],\n  \"usage\": {\n    \"prompt_tokens\": 26,\n    \"completion_tokens\":
+      21,\n    \"total_tokens\": 47,\n    \"prompt_tokens_details\": {\n      \"cached_tokens\":
+      0,\n      \"audio_tokens\": 0\n    },\n    \"completion_tokens_details\": {\n
+      \     \"reasoning_tokens\": 0,\n      \"audio_tokens\": 0,\n      \"accepted_prediction_tokens\":
+      0,\n      \"rejected_prediction_tokens\": 0\n    }\n  },\n  \"service_tier\":
+      \"default\",\n  \"system_fingerprint\": null\n}\n"
+    headers:
+      CF-RAY:
+      - 9a0b7750e83616cd-IAH
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Wed, 19 Nov 2025 00:07:14 GMT
+      Server:
+      - cloudflare
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubDomains; preload
+      X-Content-Type-Options:
+      - nosniff
+      access-control-expose-headers:
+      - X-Request-ID
+      alt-svc:
+      - h3=":443"; ma=86400
+      cf-cache-status:
+      - DYNAMIC
+      openai-organization:
+      - eightytwentylabs
+      openai-processing-ms:
+      - '1884'
+      openai-project:
+      - proj_lolRwA9UN0iczul3THcmE6D6
+      openai-version:
+      - '2020-10-01'
+      x-envoy-upstream-service-time:
+      - '1904'
+      x-openai-proxy-wasm:
+      - v0.1
+      x-ratelimit-limit-requests:
+      - '15000'
+      x-ratelimit-limit-tokens:
+      - '40000000'
+      x-ratelimit-remaining-requests:
+      - '14999'
+      x-ratelimit-remaining-tokens:
+      - '39999980'
+      x-ratelimit-reset-requests:
+      - 4ms
+      x-ratelimit-reset-tokens:
+      - 0s
+      x-request-id:
+      - req_8751688929224ce096fbcecc1ebc5ccc
     http_version: HTTP/1.1
     status_code: 200
 version: 1
