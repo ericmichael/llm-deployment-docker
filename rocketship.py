@@ -192,12 +192,18 @@ def validate_config(config):
 
 
 def setup():
+    print("Checking Docker...")
     check_docker()
+    print("Checking Dockerfile...")
     check_dockerfile()
+    print("Checking Github CLI...")
     check_github()
+    print("Checking Azure CLI...")
     check_azure_cli()
 
+    print("Loading config...")
     config = load_config()
+    print("Validating config...")
     validate_config(config)
 
     registry = config["registry"] if "registry" in config else None
@@ -208,10 +214,12 @@ def setup():
     github_token = os.getenv("GITHUB_TOKEN")
 
     # Load environment variables from .env file
+    print("Loading .env")
     env_variables = dotenv_values(".env")
 
-    if azure:
-        azure_login()
+    # if azure:
+    #     print("Attempting Azure Login")
+    #     azure_login()
 
     # Log into the registry
     try:
