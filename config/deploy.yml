@@ -21,3 +21,4 @@ azure:
       WEBSITES_PORT: 8000
       ENVIRONMENT: production
       DJANGO_STATIC_ROOT: /home/app/staticroot/
+      LITELLM_BASE_URL: http://localhost:4000

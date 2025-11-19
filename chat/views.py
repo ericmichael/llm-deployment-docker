@@ -76,17 +76,24 @@ class BearerAuthentication(BaseAuthentication):
         return (user, token)
 
 
-@api_view(["POST"])
+@api_view(["GET", "POST", "PUT", "DELETE", "PATCH"])
 @authentication_classes([BearerAuthentication])
 @permission_classes([IsAuthenticated])
-def openai_api_responses_passthrough(request):
+def litellm_proxy_catchall(request, path=""):
     """
-    Passthrough to the configured LiteLLM/OpenAI-compatible Responses API.
+    Catch-all proxy that forwards all requests to LiteLLM.
 
-    Supports streaming when the request body sets `stream: true`.
+    Supports all HTTP methods (GET, POST, PUT, DELETE, PATCH) and handles
+    both streaming and non-streaming requests.
     """
-    request_data = request.data
-    request_headers = request.META
+    from django.http import HttpResponse
+
+    # Prepend /v1/ if the path doesn't already start with it
+    if not path.startswith("v1/"):
+        path = f"v1/{path}"
+
+    # Build the upstream URL
+    upstream_url = _litellm_url(f"/{path}")
 
     # Debug toggles
     debug_enabled = getattr(settings, "DEBUG_OPENAI_PASSTHROUGH", False)
@@ -104,213 +111,158 @@ def openai_api_responses_passthrough(request):
                 redacted[k] = v
         return redacted
 
-    # Check if streaming is requested
+    # Check if streaming is requested (only for POST requests with body)
     is_streaming = False
-    try:
-        # request.data may be QueryDict or dict-like; be defensive
-        is_streaming = bool(request_data.get("stream", False))
-    except Exception:
-        is_streaming = False
+    request_data = None
+    if request.method in ["POST", "PUT", "PATCH"]:
+        try:
+            request_data = request.data
+            is_streaming = bool(request_data.get("stream", False))
+        except Exception:
+            request_data = {}
+            is_streaming = False
 
-    endpoint = _litellm_url("/responses")
-    headers = _litellm_headers(request_headers, is_streaming=is_streaming)
+    # Prepare headers
+    headers = _litellm_headers(request.META, is_streaming=is_streaming)
 
-    # Log outgoing request metadata
+    # Log outgoing request
     if debug:
         try:
             logger.debug(
-                "[ResponsesPassthrough][%s] Outgoing POST -> %s | stream=%s | headers=%s | payload.preview=%s",
+                "[LiteLLMProxy][%s] %s -> %s | stream=%s | headers=%s | payload.preview=%s",
                 request_id,
-                endpoint,
+                request.method,
+                upstream_url,
                 is_streaming,
                 _sanitize_headers(headers),
-                json.dumps(request_data)[:2048]
-                if not isinstance(request_data, (str, bytes))
-                else str(request_data)[:2048],
+                json.dumps(request_data)[:2048] if request_data else "N/A",
             )
         except Exception:
             logger.debug(
-                "[ResponsesPassthrough][%s] (payload preview unavailable)", request_id
+                "[LiteLLMProxy][%s] %s -> %s (payload preview unavailable)",
+                request_id,
+                request.method,
+                upstream_url,
             )
 
-    if is_streaming:
-        # Ensure upstream knows we want SSE
-        headers.setdefault("Accept", "text/event-stream")
+    # Make the request based on HTTP method
+    method = request.method.lower()
+    request_func = getattr(requests, method)
 
-        def generate():
-            start = time.monotonic()
-            with requests.post(
-                endpoint,
-                json=request_data,
-                headers=headers,
-                stream=True,
-            ) as response:
-                # If upstream responded with an error status, don't stream; return the error body instead
-                if response.status_code >= 400:
-                    try:
-                        body = response.json()
-                        text = json.dumps(body)
-                    except Exception:
-                        text = response.text
+    try:
+        if is_streaming:
+            # Streaming response
+            headers.setdefault("Accept", "text/event-stream")
+
+            def generate():
+                start = time.monotonic()
+                with request_func(
+                    upstream_url,
+                    json=request_data,
+                    params=request.GET.dict(),
+                    headers=headers,
+                    stream=True,
+                ) as response:
+                    # Handle error responses
+                    if response.status_code >= 400:
+                        try:
+                            body = response.json()
+                            text = json.dumps(body)
+                        except Exception:
+                            text = response.text
+
+                        if debug:
+                            logger.debug(
+                                "[LiteLLMProxy][%s] Upstream ERROR %s in %.3fs | body.preview=%s",
+                                request_id,
+                                response.status_code,
+                                time.monotonic() - start,
+                                text[:2048],
+                            )
+                        yield f"event: error\ndata: {text}\n\n"
+                        yield "event: done\ndata: [DONE]\n\n"
+                        return
 
                     if debug:
                         logger.debug(
-                            "[ResponsesPassthrough][%s] Upstream ERROR %s in %.3fs | headers=%s | body.preview=%s",
+                            "[LiteLLMProxy][%s] Upstream CONNECTED %s in %.3fs",
                             request_id,
                             response.status_code,
                             time.monotonic() - start,
-                            _sanitize_headers(response.headers),
-                            text[:2048],
                         )
-                    # Yield one error event as SSE so client still sees something useful
-                    yield f"event: error\ndata: {text}\n\n"
-                    yield "event: done\ndata: [DONE]\n\n"
-                    return
 
-                if debug:
-                    logger.debug(
-                        "[ResponsesPassthrough][%s] Upstream CONNECTED %s in %.3fs | headers=%s",
-                        request_id,
-                        response.status_code,
-                        time.monotonic() - start,
-                        _sanitize_headers(response.headers),
-                    )
-                for i, chunk in enumerate(response.iter_lines()):
-                    if chunk is None:
-                        continue
-                    line = chunk.decode("utf-8")
-                    if debug and i == 0:
-                        logger.debug(
-                            "[ResponsesPassthrough][%s] First SSE line: %s",
-                            request_id,
-                            line[:512],
-                        )
-                    # Pass through upstream SSE lines unchanged
-                    yield line + "\n"
+                    for i, chunk in enumerate(response.iter_lines()):
+                        if chunk is None:
+                            continue
+                        line = chunk.decode("utf-8")
+                        if debug and i == 0:
+                            logger.debug(
+                                "[LiteLLMProxy][%s] First SSE line: %s",
+                                request_id,
+                                line[:512],
+                            )
+                        yield line + "\n"
 
-        resp = StreamingHttpResponse(generate(), content_type="text/event-stream")
-        if debug:
-            resp["X-Debug-Request-Id"] = request_id
-            resp["X-Debug-Passthrough"] = "responses-sse"
-        return resp
-    else:
-        start = time.monotonic()
-        response = requests.post(
-            endpoint,
-            json=request_data,
-            headers=headers,
-        )
-        elapsed = time.monotonic() - start
-
-        # Attempt JSON; fallback to text
-        try:
-            body = response.json()
-            is_json = True
-        except Exception:
-            body = response.text
-            is_json = False
-
-        if debug:
-            logger.debug(
-                "[ResponsesPassthrough][%s] Upstream %s in %.3fs | ct=%s | body.preview=%s",
-                request_id,
-                response.status_code,
-                elapsed,
-                response.headers.get("Content-Type"),
-                (json.dumps(body) if is_json else str(body))[:2048],
-            )
-
-        if is_json:
-            resp = Response(body, status=response.status_code)
+            resp = StreamingHttpResponse(generate(), content_type="text/event-stream")
+            if debug:
+                resp["X-Debug-Request-Id"] = request_id
+                resp["X-Debug-Passthrough"] = "streaming"
+            return resp
         else:
-            # Return raw text with upstream content type
-            from django.http import HttpResponse
-
-            resp = HttpResponse(
-                body,
-                status=response.status_code,
-                content_type=response.headers.get("Content-Type", "text/plain"),
-            )
-
-        if debug:
-            resp["X-Debug-Request-Id"] = request_id
-            resp["X-Debug-Passthrough"] = "responses-json"
-            resp["X-Upstream-Status"] = str(response.status_code)
-        return resp
-
-
-@api_view(["POST"])
-@authentication_classes([BearerAuthentication])
-@permission_classes([IsAuthenticated])
-def openai_api_chat_completions_passthrough(request):
-    # Get the request data and headers
-    request_data = request.data
-    request_headers = request.META
-
-    is_streaming = request_data.get("stream", False)
-    endpoint = _litellm_url("/chat/completions")
-    headers = _litellm_headers(request_headers, is_streaming=is_streaming)
-
-    if is_streaming:
-        # Stream the response
-        # Ensure upstream knows we want SSE
-        headers.setdefault("Accept", "text/event-stream")
-
-        def generate():
-            with requests.post(
-                endpoint,
-                json=request_data,
+            # Non-streaming response
+            start = time.monotonic()
+            response = request_func(
+                upstream_url,
+                json=request_data if method in ["post", "put", "patch"] else None,
+                params=request.GET.dict(),
                 headers=headers,
-                stream=True,
-            ) as response:
-                for chunk in response.iter_lines():
-                    if chunk:
-                        decoded_chunk = chunk.decode("utf-8")
+            )
+            elapsed = time.monotonic() - start
 
-                        # Add data: prefix for SSE formatting and newlines
-                        if decoded_chunk.strip() and not decoded_chunk.startswith(
-                            "data:"
-                        ):
-                            yield f"data: {decoded_chunk}\n\n"
-                        else:
-                            yield f"{decoded_chunk}\n\n"
+            # Attempt JSON; fallback to text
+            try:
+                body = response.json()
+                is_json = True
+            except Exception:
+                body = response.text
+                is_json = False
 
-                # Add the final closing event
-                yield "data: [DONE]\n\n"
+            if debug:
+                logger.debug(
+                    "[LiteLLMProxy][%s] Upstream %s in %.3fs | ct=%s | body.preview=%s",
+                    request_id,
+                    response.status_code,
+                    elapsed,
+                    response.headers.get("Content-Type"),
+                    (json.dumps(body) if is_json else str(body))[:2048],
+                )
 
-        return StreamingHttpResponse(generate(), content_type="text/event-stream")
-    else:
-        # Non-streaming behavior - forward the request and return complete response
-        response = requests.post(
-            endpoint,
-            json=request_data,
-            headers=headers,
+            if is_json:
+                resp = Response(body, status=response.status_code)
+            else:
+                resp = HttpResponse(
+                    body,
+                    status=response.status_code,
+                    content_type=response.headers.get("Content-Type", "text/plain"),
+                )
+
+            if debug:
+                resp["X-Debug-Request-Id"] = request_id
+                resp["X-Debug-Passthrough"] = "non-streaming"
+                resp["X-Upstream-Status"] = str(response.status_code)
+            return resp
+
+    except Exception as e:
+        logger.error(
+            "[LiteLLMProxy][%s] Exception: %s",
+            request_id,
+            str(e),
+            exc_info=True,
         )
-
-        # Return the API response
-        return Response(response.json())
-
-
-@api_view(["POST"])
-@authentication_classes([BearerAuthentication])
-@permission_classes([IsAuthenticated])
-def openai_api_completions_passthrough(request):
-    # Get the request data and headers
-    request_data = request.data
-    request_headers = request.META
-
-    endpoint = _litellm_url("/completions")
-    headers = _litellm_headers(request_headers)
-
-    # Forward the request to the appropriate API
-    response = requests.post(
-        endpoint,
-        json=request_data,
-        headers=headers,
-    )
-
-    # Return the API response
-    return Response(response.json())
+        return Response(
+            {"error": str(e)},
+            status=500,
+        )
 
 
 @login_required

@@ -15,20 +15,11 @@ urlpatterns = [
     path(
         "thread/<int:pk>/delete", views.delete_thread, name="delete_thread"
     ),  # DELETE request to delete a specific thread.
-    path(
-        "api/v1/chat/completions",
-        views.openai_api_chat_completions_passthrough,
-        name="openai_api_chat_completions_passthrough",
-    ),
-    path(
-        "api/v1/completions",
-        views.openai_api_completions_passthrough,
-        name="openai_api_completions_passthrough",
-    ),
-    path(
-        "api/v1/responses",
-        views.openai_api_responses_passthrough,
-        name="openai_api_responses_passthrough",
+    # Catch-all proxy for LiteLLM - forwards all /chat/api/v1/* to http://localhost:4000/v1/*
+    re_path(
+        r"^api/v1/(?P<path>.*)$",
+        views.litellm_proxy_catchall,
+        name="litellm_proxy_catchall",
     ),
     path("settings/", views.developer_settings, name="settings"),
 ]

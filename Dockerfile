@@ -26,6 +26,12 @@ COPY entrypoint.sh /entrypoint.sh
 # Make the entrypoint script executable
 RUN chmod +x /entrypoint.sh
 
+# Copy the start script into the container
+COPY start.sh /start.sh
+
+# Make the start script executable
+RUN chmod +x /start.sh
+
 # Copy the current directory contents into the container
 COPY --chown=pn:pn . $APP_HOME/
 
@@ -41,8 +47,5 @@ USER pn
 # Make port 8000 available to the world outside this container
 EXPOSE 8000
 
-# Set the entrypoint script as the entrypoint
-ENTRYPOINT ["/entrypoint.sh"]
-
-# Run the Gunicorn server when the container launches
-CMD ["gunicorn", "aistarterkit.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]
+# Run both LiteLLM and Django when the container launches
+CMD ["/start.sh"]
