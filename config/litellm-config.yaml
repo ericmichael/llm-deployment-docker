@@ -1,40 +1,39 @@
 litellm_settings:
   drop_params: true
   telemetry: false
-router:
-  model_list:
-    - model_name: gpt-5
-      litellm_params:
-        model: azure/gpt-5
-        api_base: os.environ/AZURE_OPENAI_ENDPOINT
-        api_version: os.environ/OPENAI_API_VERSION
-        api_key: os.environ/AZURE_OPENAI_API_KEY
-        temperature: 1
-    - model_name: gpt-4.1
-      litellm_params:
-        model: azure/gpt-4.1
-        api_base: os.environ/AZURE_OPENAI_ENDPOINT
-        api_version: os.environ/OPENAI_API_VERSION
-        api_key: os.environ/AZURE_OPENAI_API_KEY
-        temperature: 1
-    - model_name: gpt-4o
-      litellm_params:
-        model: azure/gpt-4o
-        api_base: os.environ/AZURE_OPENAI_ENDPOINT
-        api_version: os.environ/OPENAI_API_VERSION
-        api_key: os.environ/AZURE_OPENAI_API_KEY
-        temperature: 1
-    - model_name: gpt-4o-mini
-      litellm_params:
-        model: azure/gpt-4o-mini
-        api_base: os.environ/AZURE_OPENAI_ENDPOINT
-        api_version: os.environ/OPENAI_API_VERSION
-        api_key: os.environ/AZURE_OPENAI_API_KEY
-        temperature: 1
-    - model_name: gpt-realtime
-      litellm_params:
-        model: azure/gpt-realtime
-        api_base: os.environ/AZURE_OPENAI_ENDPOINT
-        api_version: os.environ/OPENAI_API_VERSION
-        api_key: os.environ/AZURE_OPENAI_API_KEY
-        temperature: 1
+model_list:
+  - model_name: gpt-5
+    litellm_params:
+      model: azure/gpt-5
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      api_version: os.environ/OPENAI_API_VERSION
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      temperature: 1
+  - model_name: gpt-4.1
+    litellm_params:
+      model: azure/gpt-4.1
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      api_version: os.environ/OPENAI_API_VERSION
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      temperature: 1
+  - model_name: gpt-4o
+    litellm_params:
+      model: azure/gpt-4o
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      api_version: os.environ/OPENAI_API_VERSION
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      temperature: 1
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: azure/gpt-4o-mini
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      api_version: os.environ/OPENAI_API_VERSION
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      temperature: 1
+  - model_name: gpt-realtime
+    litellm_params:
+      model: azure/gpt-realtime
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      api_version: os.environ/OPENAI_API_VERSION
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      temperature: 1
