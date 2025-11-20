@@ -46,20 +46,32 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
         params = parse_qs(query_string)
 
         token = None
+        self.client_api_key = None
+        headers = dict(self.scope.get("headers", []))
+        api_key_header_value = headers.get(b"api-key", b"").decode()
+        api_key_query_values = params.get("api-key") or params.get("api_key") or []
+        api_key_query_value = api_key_query_values[0] if api_key_query_values else ""
+        auth_api_key_value = None
+        token = None
+
         if "token" in params:
             token = params["token"][0]
         else:
-            # Try to get from headers
-            headers = dict(self.scope.get("headers", []))
             auth_header = headers.get(b"authorization", b"").decode()
             if auth_header.startswith("Bearer "):
                 token = auth_header[7:]
-            
-            # Also check api-key header (used by some clients like omniagents/azure)
-            if not token:
-                api_key_header = headers.get(b"api-key", b"").decode()
-                if api_key_header:
-                    token = api_key_header
+
+            if not token and api_key_header_value:
+                token = api_key_header_value
+                auth_api_key_value = api_key_header_value
+            elif not token and api_key_query_value:
+                token = api_key_query_value
+                auth_api_key_value = api_key_query_value
+
+        if api_key_header_value and api_key_header_value != auth_api_key_value:
+            self.client_api_key = api_key_header_value
+        elif api_key_query_value and api_key_query_value != auth_api_key_value:
+            self.client_api_key = api_key_query_value
 
         if not token:
             logger.warning("WebSocket connection rejected: No token provided")
@@ -98,6 +110,8 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
         headers = {}
         if service_key:
             headers["Authorization"] = f"Bearer {service_key}"
+        if self.client_api_key:
+            headers["api-key"] = self.client_api_key
 
         try:
             logger.info(f"Connecting to LiteLLM: {litellm_url}")
