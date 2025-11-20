@@ -40,7 +40,7 @@ if ENV == "development" or ENV == "test":
     ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 else:
     DEBUG = False
-    ALLOWED_HOSTS = []
+    ALLOWED_HOSTS = ["*"]
     if custom_hostname:
         CSRF_TRUSTED_ORIGINS.append("https://" + custom_hostname)
         ALLOWED_HOSTS.append(custom_hostname)

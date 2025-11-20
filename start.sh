@@ -17,7 +17,15 @@ LITELLM_PID=$!
 echo "LiteLLM started with PID: $LITELLM_PID"
 
 # Give LiteLLM a moment to start
-sleep 2
+echo "Waiting for LiteLLM to be ready..."
+for i in {1..30}; do
+    if curl -s http://localhost:4000/health > /dev/null; then
+        echo "LiteLLM is ready!"
+        break
+    fi
+    echo "Waiting for LiteLLM..."
+    sleep 1
+done
 
 # Check if LiteLLM is still running
 if ! kill -0 $LITELLM_PID 2>/dev/null; then
