@@ -95,6 +95,35 @@ def update_app_settings(azure, additional_env):
         return
 
 
+def restart_app_service(azure):
+    app_name = azure["app_service"]["app_name"]
+    resource_group = azure["app_service"]["resource_group"]
+    subscription = azure["subscription"]
+
+    try:
+        with open(os.devnull, "w") as devnull:
+            subprocess.run(
+                [
+                    "az",
+                    "webapp",
+                    "restart",
+                    "--name",
+                    app_name,
+                    "--resource-group",
+                    resource_group,
+                    "--subscription",
+                    subscription,
+                ],
+                stdout=devnull,
+                stderr=devnull,
+                check=True,
+            )
+    except subprocess.CalledProcessError as e:
+        print("Error restarting Azure Web App Service.")
+        print(e)
+        return
+
+
 def get_public_key(token, repo):
     url = f"https://api.github.com/repos/{repo}/actions/secrets/public-key"
     headers = {
@@ -287,6 +316,8 @@ def setup():
         print(f"Pushing secrets to Azure Web App Service ...")
         all_azure_secrets = {**env_variables, **azure["app_service"]["additional_env"]}
         update_app_settings(azure, all_azure_secrets)
+        print("Restarting Azure Web App Service ...")
+        restart_app_service(azure)
     else:
         print("Missing configuration for Azure...")
         print("Pushing secrets to Azure Web App Service...skipped")
