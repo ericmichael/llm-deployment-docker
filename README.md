@@ -120,6 +120,13 @@ Before you can install the JavaScript dependencies, you need to install Node.js 
     python manage.py runserver
     ```
 
+### Hostname Configuration
+
+Local development only accepts `localhost` and `127.0.0.1` by default. Azure Container Instances send health probes from `169.254.130.2`, which is now allowed automatically. Extend or override the whitelist with the following environment variables before launching Django or the Docker image:
+
+- `DJANGO_HEALTHCHECK_HOSTS`: comma-separated list of IPs used by platform health probes. Defaults to `169.254.130.2`.
+- `DJANGO_ADDITIONAL_ALLOWED_HOSTS`: comma-separated hostnames or IP addresses that should be accepted in addition to the defaults.
+
 ## LiteLLM Proxy (Stateless)
 
 This project now routes all OpenAI-compatible traffic through a stateless LiteLLM proxy. LiteLLM runs alongside Django and forwards requests to your configured providers without requiring an additional database.

@@ -35,19 +35,51 @@ custom_hostname = os.getenv("CUSTOM_HOSTNAME")
 
 CSRF_TRUSTED_ORIGINS = []
 
-if ENV == "development" or ENV == "test":
+
+def _split_hosts(raw):
+    if not raw:
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _collect_hosts(*groups):
+    hosts = []
+    for group in groups:
+        if not group:
+            continue
+        for host in group:
+            host = host.strip()
+            if host and host not in hosts:
+                hosts.append(host)
+    return hosts
+
+
+trusted_hostnames = [value for value in (custom_hostname, website_hostname) if value]
+for host in trusted_hostnames:
+    origin = f"https://{host}"
+    if origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(origin)
+
+default_dev_hosts = ["localhost", "127.0.0.1"]
+health_check_hosts = _split_hosts(
+    os.getenv("DJANGO_HEALTHCHECK_HOSTS", "169.254.130.2")
+)
+extra_allowed_hosts = _split_hosts(os.getenv("DJANGO_ADDITIONAL_ALLOWED_HOSTS"))
+
+if ENV in ("development", "test"):
     DEBUG = True
-    ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+    ALLOWED_HOSTS = _collect_hosts(
+        default_dev_hosts,
+        health_check_hosts,
+        extra_allowed_hosts,
+        trusted_hostnames,
+    )
 else:
     DEBUG = False
-    # Azure Container Instances uses 169.254.130.x for internal health checks
     ALLOWED_HOSTS = ["*"]
-    if custom_hostname:
-        CSRF_TRUSTED_ORIGINS.append("https://" + custom_hostname)
-        ALLOWED_HOSTS.append(custom_hostname)
-    if website_hostname:
-        CSRF_TRUSTED_ORIGINS.append("https://" + website_hostname)
-        ALLOWED_HOSTS.append(website_hostname)
+    ALLOWED_HOSTS.extend(
+        host for host in trusted_hostnames if host not in ALLOWED_HOSTS
+    )
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SAMESITE = "None"

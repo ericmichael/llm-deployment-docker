@@ -165,10 +165,10 @@ def litellm_proxy_catchall(request, path=""):
                 """Async generator for streaming responses in ASGI mode."""
                 from asgiref.sync import sync_to_async
                 import asyncio
+                from requests import exceptions as requests_exceptions
 
                 start = time.monotonic()
-                
-                # Wrap the synchronous requests call in sync_to_async
+
                 def make_request():
                     return request_func(
                         upstream_url,
@@ -178,10 +178,29 @@ def litellm_proxy_catchall(request, path=""):
                         stream=True,
                     )
                 
-                response = await sync_to_async(make_request)()
-                
+                def serialize_error(message):
+                    return json.dumps({"error": message})
+
+                done_event = "event: done\ndata: [DONE]\n\n"
+                response = None
                 try:
-                    # Handle error responses
+                    response = await sync_to_async(
+                        make_request, thread_sensitive=True
+                    )()
+                except requests_exceptions.RequestException as exc:
+                    message = str(exc)
+                    logger.error(
+                        "[LiteLLMProxy][%s] Streaming connect failure in %.3fs: %s",
+                        request_id,
+                        time.monotonic() - start,
+                        message,
+                    )
+                    payload = serialize_error(message)
+                    yield f"event: error\ndata: {payload}\n\n"
+                    yield done_event
+                    return
+
+                try:
                     if response.status_code >= 400:
                         try:
                             body = response.json()
@@ -198,7 +217,7 @@ def litellm_proxy_catchall(request, path=""):
                                 text[:2048],
                             )
                         yield f"event: error\ndata: {text}\n\n"
-                        yield "event: done\ndata: [DONE]\n\n"
+                        yield done_event
                         return
 
                     if debug:
@@ -209,12 +228,11 @@ def litellm_proxy_catchall(request, path=""):
                             time.monotonic() - start,
                         )
 
-                    # Stream the response chunks
                     i = 0
                     for chunk in response.iter_lines():
                         if chunk is None:
                             continue
-                        line = chunk.decode("utf-8")
+                        line = chunk.decode("utf-8", errors="replace")
                         if debug and i == 0:
                             logger.debug(
                                 "[LiteLLMProxy][%s] First SSE line: %s",
@@ -223,12 +241,36 @@ def litellm_proxy_catchall(request, path=""):
                             )
                         yield line + "\n"
                         i += 1
-                        # Yield control to event loop periodically
                         if i % 10 == 0:
                             await asyncio.sleep(0)
+                except requests_exceptions.RequestException as exc:
+                    message = str(exc)
+                    logger.error(
+                        "[LiteLLMProxy][%s] Streaming failure after %.3fs: %s",
+                        request_id,
+                        time.monotonic() - start,
+                        message,
+                    )
+                    payload = serialize_error(message)
+                    yield f"event: error\ndata: {payload}\n\n"
+                    yield done_event
+                except Exception as exc:
+                    if isinstance(exc, asyncio.CancelledError):
+                        raise
+                    message = str(exc)
+                    logger.error(
+                        "[LiteLLMProxy][%s] Unexpected streaming error after %.3fs: %s",
+                        request_id,
+                        time.monotonic() - start,
+                        message,
+                        exc_info=True,
+                    )
+                    payload = serialize_error(message)
+                    yield f"event: error\ndata: {payload}\n\n"
+                    yield done_event
                 finally:
-                    # Ensure response is closed
-                    response.close()
+                    if response is not None:
+                        response.close()
 
             resp = StreamingHttpResponse(generate(), content_type="text/event-stream")
             if debug:
