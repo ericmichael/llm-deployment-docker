@@ -161,15 +161,26 @@ def litellm_proxy_catchall(request, path=""):
             # Streaming response
             headers.setdefault("Accept", "text/event-stream")
 
-            def generate():
+            async def generate():
+                """Async generator for streaming responses in ASGI mode."""
+                from asgiref.sync import sync_to_async
+                import asyncio
+
                 start = time.monotonic()
-                with request_func(
-                    upstream_url,
-                    json=request_data,
-                    params=request.GET.dict(),
-                    headers=headers,
-                    stream=True,
-                ) as response:
+                
+                # Wrap the synchronous requests call in sync_to_async
+                def make_request():
+                    return request_func(
+                        upstream_url,
+                        json=request_data,
+                        params=request.GET.dict(),
+                        headers=headers,
+                        stream=True,
+                    )
+                
+                response = await sync_to_async(make_request)()
+                
+                try:
                     # Handle error responses
                     if response.status_code >= 400:
                         try:
@@ -198,7 +209,9 @@ def litellm_proxy_catchall(request, path=""):
                             time.monotonic() - start,
                         )
 
-                    for i, chunk in enumerate(response.iter_lines()):
+                    # Stream the response chunks
+                    i = 0
+                    for chunk in response.iter_lines():
                         if chunk is None:
                             continue
                         line = chunk.decode("utf-8")
@@ -209,6 +222,13 @@ def litellm_proxy_catchall(request, path=""):
                                 line[:512],
                             )
                         yield line + "\n"
+                        i += 1
+                        # Yield control to event loop periodically
+                        if i % 10 == 0:
+                            await asyncio.sleep(0)
+                finally:
+                    # Ensure response is closed
+                    response.close()
 
             resp = StreamingHttpResponse(generate(), content_type="text/event-stream")
             if debug:

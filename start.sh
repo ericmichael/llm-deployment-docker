@@ -18,12 +18,23 @@ echo "LiteLLM started with PID: $LITELLM_PID"
 
 # Give LiteLLM a moment to start
 echo "Waiting for LiteLLM to be ready..."
-for i in {1..30}; do
-    if curl -s http://localhost:4000/health > /dev/null; then
+MAX_WAIT=60
+for i in $(seq 1 $MAX_WAIT); do
+    # Check if LiteLLM health endpoint is responding
+    if curl -s http://localhost:4000/health > /dev/null 2>&1; then
+        echo "LiteLLM health check passed!"
+        # Give it a couple more seconds to fully initialize
+        sleep 3
         echo "LiteLLM is ready!"
         break
     fi
-    echo "Waiting for LiteLLM..."
+    if [ $i -eq $MAX_WAIT ]; then
+        echo "ERROR: LiteLLM failed to become ready after ${MAX_WAIT} seconds"
+        echo "LiteLLM logs:"
+        cat /tmp/litellm.log
+        exit 1
+    fi
+    echo "Waiting for LiteLLM... ($i/$MAX_WAIT)"
     sleep 1
 done
 
