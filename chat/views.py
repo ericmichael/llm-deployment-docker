@@ -53,11 +53,8 @@ def _litellm_headers(request_headers, is_streaming=False):
     if service_key:
         headers["Authorization"] = f"Bearer {service_key}"
 
-    # Preserve api-key header for Azure OpenAI compatibility
-    # (omniagents sends api-key header instead of Bearer token for Azure)
-    api_key_header = request_headers.get("HTTP_API_KEY")
-    if api_key_header:
-        headers["api-key"] = api_key_header
+    if service_key:
+        headers["api-key"] = service_key
 
     if is_streaming:
         headers["Accept"] = "text/event-stream"

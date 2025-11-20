@@ -46,7 +46,6 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
         params = parse_qs(query_string)
 
         token = None
-        self.client_api_key = None
         headers = dict(self.scope.get("headers", []))
         api_key_header_value = headers.get(b"api-key", b"").decode()
         api_key_query_values = params.get("api-key") or params.get("api_key") or []
@@ -67,11 +66,6 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
             elif not token and api_key_query_value:
                 token = api_key_query_value
                 auth_api_key_value = api_key_query_value
-
-        if api_key_header_value and api_key_header_value != auth_api_key_value:
-            self.client_api_key = api_key_header_value
-        elif api_key_query_value and api_key_query_value != auth_api_key_value:
-            self.client_api_key = api_key_query_value
 
         if not token:
             logger.warning("WebSocket connection rejected: No token provided")
@@ -105,8 +99,6 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
         query_params = {"model": self.model}
         if self.intent:
             query_params["intent"] = self.intent
-        if self.client_api_key:
-            query_params["api-key"] = self.client_api_key
 
         litellm_url = f"{litellm_ws_url}/v1/realtime?{urlencode(query_params)}"
 
@@ -114,8 +106,7 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
         headers = {}
         if service_key:
             headers["Authorization"] = f"Bearer {service_key}"
-        if self.client_api_key:
-            headers["api-key"] = self.client_api_key
+            headers["api-key"] = service_key
 
         try:
             logger.info(f"Connecting to LiteLLM: {litellm_url}")
