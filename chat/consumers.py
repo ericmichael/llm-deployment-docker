@@ -54,6 +54,12 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
             auth_header = headers.get(b"authorization", b"").decode()
             if auth_header.startswith("Bearer "):
                 token = auth_header[7:]
+            
+            # Also check api-key header (used by some clients like omniagents/azure)
+            if not token:
+                api_key_header = headers.get(b"api-key", b"").decode()
+                if api_key_header:
+                    token = api_key_header
 
         if not token:
             logger.warning("WebSocket connection rejected: No token provided")
