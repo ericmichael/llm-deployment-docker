@@ -44,8 +44,9 @@ RUN mkdir -p /home/pn/.cache && chown -R pn:pn /home/pn/.cache
 # Switch to non-root user
 USER pn
 
-# Make port 8000 available to the world outside this container
+# Make ports available to the world outside this container
 EXPOSE 8000
+EXPOSE 4000
 
 # Run both LiteLLM and Django when the container launches
 CMD ["/start.sh"]

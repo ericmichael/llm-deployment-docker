@@ -53,12 +53,14 @@ else:
     CSRF_COOKIE_SAMESITE = "None"
 
 INSTALLED_APPS = [
+    "daphne",  # Must be first for ASGI support
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "channels",  # WebSocket support
     "chat",
     "rest_framework",
     "rest_framework.authtoken",
@@ -99,6 +101,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "aistarterkit.wsgi.application"
+ASGI_APPLICATION = "aistarterkit.asgi.application"
 
 
 # Database

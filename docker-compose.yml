@@ -1,10 +1,10 @@
 version: '3'
 services:
   app:
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile
-    command: bash -c "python manage.py migrate && gunicorn aistarterkit.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+    command: bash -c "python manage.py migrate && daphne -b 0.0.0.0 -p 8000 aistarterkit.asgi:application"
     depends_on:
       - litellm-proxy
     ports:
@@ -29,5 +29,8 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LITELLM_MASTER_KEY=${LITELLM_SERVICE_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - OPENAI_API_VERSION=${OPENAI_API_VERSION}
     ports:
       - "4000:4000"

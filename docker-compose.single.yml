@@ -1,0 +1,35 @@
+version: '3'
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Uses /start.sh which runs both Django+Daphne and LiteLLM in one container
+    ports:
+      - "8000:8000"  # Django + WebSocket
+      - "4000:4000"  # LiteLLM (optional, for debugging)
+    volumes:
+      - ./db/duckdb:/usr/src/app/db/duckdb
+      - ./db/sqlite3:/usr/src/app/db/sqlite3
+    environment:
+      # OpenAI/LiteLLM Configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_BASE=${OPENAI_API_BASE}
+      - LITELLM_BASE_URL=http://127.0.0.1:4000
+      - LITELLM_SERVICE_KEY=${LITELLM_SERVICE_KEY}
+      - LITELLM_MASTER_KEY=${LITELLM_SERVICE_KEY}
+      - LITELLM_DEFAULT_MODEL=${LITELLM_DEFAULT_MODEL:-gpt-5}
+      - LITELLM_MODEL_LIST=${LITELLM_MODEL_LIST}
+      # Azure OpenAI Configuration
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - OPENAI_API_VERSION=${OPENAI_API_VERSION}
+      - OPENAI_API_TYPE=${OPENAI_API_TYPE:-azure}
+      # Django Configuration
+      - SECRET_KEY=${SECRET_KEY}
+      - DEFAULT_ADMIN_EMAIL=${DEFAULT_ADMIN_EMAIL}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
+      - DEFAULT_ADMIN_USERNAME=${DEFAULT_ADMIN_USERNAME}
+      - SQLITE3_STORAGE_PATH=/usr/src/app/db/sqlite3
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG_OPENAI_PASSTHROUGH=${DEBUG_OPENAI_PASSTHROUGH:-false}

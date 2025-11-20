@@ -10,3 +10,6 @@ whitenoise==6.6.0
 djangorestframework==3.14.0
 markdown==3.5.1
 beautifulsoup4==4.12.2
+channels>=4.0.0
+daphne>=4.0.0
+websockets>=12.0

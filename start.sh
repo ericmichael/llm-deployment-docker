@@ -1,15 +1,91 @@
 #!/bin/bash
 set -e
 
+echo "=========================================="
+echo "Starting LLM Deployment Container"
+echo "=========================================="
+
 # Run the entrypoint script (migrations, collectstatic, etc.)
-/entrypoint.sh gunicorn aistarterkit.wsgi:application --bind 0.0.0.0:8000 --workers 3 &
+echo "Running migrations and collecting static files..."
+/entrypoint.sh echo "Entrypoint tasks completed"
 
 # Start LiteLLM proxy in the background
+echo ""
 echo "Starting LiteLLM proxy on port 4000..."
-litellm --config config/litellm-config.yaml --host 0.0.0.0 --port 4000 &
+litellm --config config/litellm-config.yaml --host 0.0.0.0 --port 4000 > /tmp/litellm.log 2>&1 &
+LITELLM_PID=$!
+echo "LiteLLM started with PID: $LITELLM_PID"
 
-# Wait for both processes
-wait -n
+# Give LiteLLM a moment to start
+sleep 2
 
-# Exit with status of process that exited first
-exit $?
+# Check if LiteLLM is still running
+if ! kill -0 $LITELLM_PID 2>/dev/null; then
+    echo "ERROR: LiteLLM failed to start!"
+    cat /tmp/litellm.log
+    exit 1
+fi
+echo "LiteLLM is running successfully"
+
+# Start Django with Daphne (ASGI server for WebSocket support)
+echo ""
+echo "Starting Django with Daphne on port 8000..."
+daphne -b 0.0.0.0 -p 8000 aistarterkit.asgi:application > /tmp/daphne.log 2>&1 &
+DAPHNE_PID=$!
+echo "Daphne started with PID: $DAPHNE_PID"
+
+# Give Daphne a moment to start
+sleep 2
+
+# Check if Daphne is still running
+if ! kill -0 $DAPHNE_PID 2>/dev/null; then
+    echo "ERROR: Daphne failed to start!"
+    cat /tmp/daphne.log
+    exit 1
+fi
+echo "Daphne is running successfully"
+
+echo ""
+echo "=========================================="
+echo "Services Started Successfully"
+echo "  - LiteLLM Proxy: http://0.0.0.0:4000"
+echo "  - Django App:    http://0.0.0.0:8000"
+echo "  - WebSocket:     ws://0.0.0.0:8000/ws/realtime"
+echo "=========================================="
+echo ""
+echo "Tailing logs (Ctrl+C to view both logs)..."
+
+# Tail both log files
+tail -f /tmp/litellm.log /tmp/daphne.log &
+TAIL_PID=$!
+
+# Function to handle shutdown
+shutdown() {
+    echo ""
+    echo "Shutting down services..."
+    kill $LITELLM_PID 2>/dev/null || true
+    kill $DAPHNE_PID 2>/dev/null || true
+    kill $TAIL_PID 2>/dev/null || true
+    exit 0
+}
+
+# Trap SIGTERM and SIGINT
+trap shutdown SIGTERM SIGINT
+
+# Wait for either process to exit
+wait -n $LITELLM_PID $DAPHNE_PID
+
+# If we get here, one of the processes exited
+EXIT_CODE=$?
+echo "A service has exited with code: $EXIT_CODE"
+
+# Show recent logs
+echo ""
+echo "Recent LiteLLM logs:"
+tail -20 /tmp/litellm.log
+echo ""
+echo "Recent Daphne logs:"
+tail -20 /tmp/daphne.log
+
+# Cleanup
+shutdown
