@@ -11,7 +11,7 @@ import websockets
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.conf import settings
 from rest_framework.authtoken.models import Token
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 
 
 logger = logging.getLogger(__name__)
@@ -102,9 +102,13 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
         litellm_ws_url = litellm_base.replace("http://", "ws://").replace("https://", "wss://")
 
         # Build the upstream URL with query params
-        litellm_url = f"{litellm_ws_url}/v1/realtime?model={self.model}"
+        query_params = {"model": self.model}
         if self.intent:
-            litellm_url += f"&intent={self.intent}"
+            query_params["intent"] = self.intent
+        if self.client_api_key:
+            query_params["api-key"] = self.client_api_key
+
+        litellm_url = f"{litellm_ws_url}/v1/realtime?{urlencode(query_params)}"
 
         service_key = getattr(settings, "LITELLM_SERVICE_KEY", None)
         headers = {}

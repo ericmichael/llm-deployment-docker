@@ -62,33 +62,37 @@ def update_app_settings(azure, additional_env):
     resource_group = azure["app_service"]["resource_group"]
     subscription = azure["subscription"]  # Add the subscription to your config
 
-    for key, value in additional_env.items():
-        try:
-            with open(os.devnull, "w") as devnull:
-                subprocess.run(
-                    [
-                        "az",
-                        "webapp",
-                        "config",
-                        "appsettings",
-                        "set",
-                        "--name",
-                        app_name,
-                        "--resource-group",
-                        resource_group,
-                        "--settings",
-                        f"{key}={value}",
-                        "--subscription",
-                        subscription,
-                    ],
-                    stdout=devnull,
-                    stderr=devnull,
-                    check=True,
-                )
-        except subprocess.CalledProcessError as e:
-            print(f"Error setting app setting {key}.")
-            print(e)
-            return
+    settings_values = [f"{key}={value}" for key, value in additional_env.items()]
+
+    if not settings_values:
+        return
+
+    try:
+        with open(os.devnull, "w") as devnull:
+            subprocess.run(
+                [
+                    "az",
+                    "webapp",
+                    "config",
+                    "appsettings",
+                    "set",
+                    "--name",
+                    app_name,
+                    "--resource-group",
+                    resource_group,
+                    "--settings",
+                    *settings_values,
+                    "--subscription",
+                    subscription,
+                ],
+                stdout=devnull,
+                stderr=devnull,
+                check=True,
+            )
+    except subprocess.CalledProcessError as e:
+        print("Error setting Azure app settings.")
+        print(e)
+        return
 
 
 def get_public_key(token, repo):
