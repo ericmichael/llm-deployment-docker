@@ -1,0 +1,25 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:8000"  # Django + WebSocket (host:container)
+      - "4001:4000"  # LiteLLM proxy (host:container)
+    volumes:
+      # Mount source code for live reload
+      - .:/usr/src/app
+      # Persist node_modules (avoid overwriting with local)
+      - /usr/src/app/node_modules
+      # Persist database
+      - ./db/sqlite3:/usr/src/app/db/sqlite3
+    env_file:
+      - .env
+    environment:
+      # Override/ensure these are set for dev
+      - ENVIRONMENT=development
+      - LITELLM_BASE_URL=http://127.0.0.1:4000
+      - LITELLM_MASTER_KEY=${LITELLM_SERVICE_KEY}
+      - SQLITE3_STORAGE_PATH=/usr/src/app/db/sqlite3
+    stdin_open: true
+    tty: true

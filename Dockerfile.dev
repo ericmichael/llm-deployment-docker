@@ -1,0 +1,47 @@
+# Development Dockerfile with hot-reload support
+FROM nikolaik/python-nodejs:python3.10-nodejs18-slim
+
+# Set environment variables
+ENV APP_HOME=/usr/src/app \
+    PATH=/home/pn/.local/bin:$PATH \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Set working directory
+WORKDIR $APP_HOME
+
+# Install system dependencies (curl for health checks)
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy dependency files first for better caching
+COPY requirements.txt package*.json ./
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade -r requirements.txt
+
+# Apply patches to litellm (unmerged fixes)
+COPY patches/ /tmp/patches/
+RUN cp /tmp/patches/litellm_azure_realtime.py /usr/local/lib/python3.10/site-packages/litellm/llms/azure/realtime/handler.py
+
+# Install Node dependencies
+RUN npm install
+
+# Copy scripts
+COPY entrypoint.sh /entrypoint.sh
+COPY start.sh /start.sh
+RUN chmod +x /entrypoint.sh /start.sh
+
+# Create directories and set permissions
+RUN mkdir -p /home/pn/.cache $APP_HOME/db/sqlite3 $APP_HOME/staticfiles && \
+    chown -R pn:pn /home/pn/.cache $APP_HOME
+
+# Switch to non-root user
+USER pn
+
+# Expose ports
+EXPOSE 8000 4000
+
+# Default command - can be overridden in docker-compose
+CMD ["/start.sh"]

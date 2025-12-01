@@ -1,3 +1,6 @@
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
 litellm_settings:
   drop_params: true
   telemetry: false
@@ -36,4 +39,4 @@ model_list:
       api_base: os.environ/AZURE_OPENAI_ENDPOINT
       api_version: os.environ/OPENAI_API_VERSION
       api_key: os.environ/AZURE_OPENAI_API_KEY
-      temperature: 1
+      realtime_protocol: "GA"
