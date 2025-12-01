@@ -8,6 +8,7 @@ the server handles the LiteLLM service key internally.
 import asyncio
 import logging
 import websockets
+from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.conf import settings
 from rest_framework.authtoken.models import Token
@@ -74,8 +75,8 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
 
         # Authenticate user
         try:
-            token_obj = Token.objects.get(key=token)
-            self.user = token_obj.user
+            token_obj = await database_sync_to_async(Token.objects.get)(key=token)
+            self.user = await database_sync_to_async(lambda: token_obj.user)()
             logger.info(f"WebSocket connection authenticated for user: {self.user.username}")
         except Token.DoesNotExist:
             logger.warning(f"WebSocket connection rejected: Invalid token")
