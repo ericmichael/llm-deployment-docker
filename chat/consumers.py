@@ -113,7 +113,7 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
             logger.info(f"Connecting to LiteLLM: {litellm_url}")
             self.backend_ws = await websockets.connect(
                 litellm_url,
-                extra_headers=headers,
+                additional_headers=headers,
                 max_size=None  # Allow unlimited message size for audio
             )
 
