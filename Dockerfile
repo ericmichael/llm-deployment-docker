@@ -14,6 +14,10 @@ COPY requirements.txt ./
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
+# Apply patches to litellm (unmerged fixes for Azure realtime WebSocket)
+COPY patches/ /tmp/patches/
+RUN cp /tmp/patches/litellm_azure_realtime.py /usr/local/lib/python3.10/site-packages/litellm/llms/azure/realtime/handler.py
+
 # Copy package files for Node dependencies
 COPY package*.json ./
 
