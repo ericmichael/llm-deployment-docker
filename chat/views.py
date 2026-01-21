@@ -53,7 +53,14 @@ def _litellm_headers(is_streaming=False):
 
 
 async def _authenticate_bearer(request):
-    """Authenticate request using Bearer token. Returns (user, token) or None."""
+    """
+    Authenticate request using Bearer token.
+
+    Returns:
+        tuple: (user, token_key) if authenticated and authorized
+        None: if token is invalid
+        "inactive": if user has no active course enrollment
+    """
     header = request.META.get("HTTP_AUTHORIZATION", "")
     if not header.startswith("Bearer "):
         return None
@@ -64,7 +71,18 @@ async def _authenticate_bearer(request):
 
     try:
         token = await sync_to_async(Token.objects.select_related("user").get)(key=token_key)
-        return (token.user, token_key)
+        user = token.user
+
+        # Superusers bypass enrollment check
+        if user.is_superuser:
+            return (user, token_key)
+
+        # Check for active course enrollment
+        has_active = await sync_to_async(user.has_active_enrollment)()
+        if not has_active:
+            return "inactive"
+
+        return (user, token_key)
     except Token.DoesNotExist:
         return None
 
@@ -81,6 +99,11 @@ async def litellm_proxy_catchall(request, path=""):
     auth_result = await _authenticate_bearer(request)
     if auth_result is None:
         return JsonResponse({"error": "Authentication required"}, status=401)
+    if auth_result == "inactive":
+        return JsonResponse(
+            {"error": "Access denied. You are not enrolled in an active course."},
+            status=403,
+        )
 
     # Prepend /v1/ if the path doesn't already start with it
     if not path.startswith("v1/"):

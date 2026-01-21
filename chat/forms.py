@@ -3,6 +3,8 @@ from django import forms
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth import get_user_model
 
+from .models import Enrollment
+
 
 class CustomUserAuthenticationForm(AuthenticationForm):
     username = forms.EmailField(
@@ -28,3 +30,31 @@ class CustomUserAuthenticationForm(AuthenticationForm):
     class Meta:
         model = get_user_model()
         fields = ("email", "password")
+
+
+class CSVImportForm(forms.Form):
+    """Form for uploading CSV files to import students or TAs."""
+
+    csv_file = forms.FileField(
+        label="CSV File",
+        help_text="CSV with columns: email, student_id",
+    )
+    role = forms.ChoiceField(
+        choices=Enrollment.Role.choices,
+        initial=Enrollment.Role.STUDENT,
+        label="Import as",
+    )
+
+
+class AddTAForm(forms.Form):
+    """Form for quickly adding a single TA to a course."""
+
+    email = forms.EmailField(
+        label="Email",
+        help_text="TA's email address",
+    )
+    student_id = forms.CharField(
+        label="Student ID",
+        max_length=50,
+        help_text="Used for password generation (ai_<student_id>)",
+    )

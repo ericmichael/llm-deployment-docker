@@ -1,0 +1,87 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{% block content %}
+<h1>Import Users to {{ course.code }} - {{ course.name }}</h1>
+
+<p>Upload a CSV file to import students or TAs into this course.</p>
+
+<h2>CSV Format</h2>
+<p>The CSV file must have the following columns:</p>
+<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px;">email,student_id
+john.doe@university.edu,12345678
+jane.smith@university.edu,87654321</pre>
+
+<h2>Import Behavior</h2>
+<ul>
+    <li><strong>Students:</strong> Can only be enrolled in one course. If already enrolled elsewhere, they will be moved to this course.</li>
+    <li><strong>TAs:</strong> Can be enrolled in multiple courses.</li>
+    <li>New users will be created with password <code>ai_&lt;student_id&gt;</code></li>
+    <li>Existing users already in this course will be skipped.</li>
+</ul>
+
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+
+    <fieldset class="module aligned">
+        <div class="form-row">
+            <div>
+                <label for="id_csv_file" class="required">{{ form.csv_file.label }}:</label>
+                {{ form.csv_file }}
+                {% if form.csv_file.help_text %}
+                <p class="help">{{ form.csv_file.help_text }}</p>
+                {% endif %}
+                {% if form.csv_file.errors %}
+                <ul class="errorlist">
+                    {% for error in form.csv_file.errors %}
+                    <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div>
+                <label for="id_role">{{ form.role.label }}:</label>
+                {{ form.role }}
+                {% if form.role.help_text %}
+                <p class="help">{{ form.role.help_text }}</p>
+                {% endif %}
+            </div>
+        </div>
+    </fieldset>
+
+    <div class="submit-row">
+        <input type="submit" value="Import" class="default">
+        <a href="{% url 'admin:chat_course_change' course.pk %}" class="button cancel-link">Cancel</a>
+    </div>
+</form>
+
+{% if results %}
+<h2>Import Results</h2>
+<div style="background: #dff0d8; padding: 15px; border-radius: 4px; margin-top: 20px;">
+    <p><strong>Import completed successfully!</strong></p>
+    <ul>
+        <li>Users created: {{ results.created_users }}</li>
+        <li>Enrollments created: {{ results.created_enrollments }}</li>
+        {% if results.moved_enrollments %}
+        <li>Students moved from other courses: {{ results.moved_enrollments }}</li>
+        {% endif %}
+        <li>Skipped (already enrolled): {{ results.skipped }}</li>
+    </ul>
+</div>
+
+{% if results.errors %}
+<div style="background: #f2dede; padding: 15px; border-radius: 4px; margin-top: 10px;">
+    <p><strong>Some rows had errors:</strong></p>
+    <ul>
+        {% for error in results.errors %}
+        <li>{{ error }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+{% endif %}
+
+{% endblock %}

@@ -85,9 +85,17 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
         try:
             token_obj = await database_sync_to_async(Token.objects.get)(key=token)
             self.user = await database_sync_to_async(lambda: token_obj.user)()
-            logger.info(f"WebSocket connection authenticated for user: {self.user.username}")
+            logger.info(f"WebSocket connection authenticated for user: {self.user.email}")
+
+            # Check for active course enrollment (superusers bypass this check)
+            if not self.user.is_superuser:
+                has_active = await database_sync_to_async(self.user.has_active_enrollment)()
+                if not has_active:
+                    logger.warning(f"WebSocket rejected: User {self.user.email} has no active enrollment")
+                    await self.close(code=4003)
+                    return
         except Token.DoesNotExist:
-            logger.warning(f"WebSocket connection rejected: Invalid token")
+            logger.warning("WebSocket connection rejected: Invalid token")
             await self.close(code=4001)
             return
 
@@ -137,7 +145,7 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
             # Start bidirectional forwarding and idle timeout checker
             self.forward_task = asyncio.create_task(self.forward_from_backend())
             self.idle_task = asyncio.create_task(self.check_idle_timeout())
-            logger.info(f"WebSocket proxy established for user {self.user.username}")
+            logger.info(f"WebSocket proxy established for user {self.user.email}")
 
         except asyncio.TimeoutError:
             logger.error(f"Timeout connecting to LiteLLM after {WS_CONNECT_TIMEOUT}s")
@@ -214,7 +222,7 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
                 else:
                     await self.send(text_data=message)
         except websockets.exceptions.ConnectionClosed:
-            logger.info(f"Backend connection closed for user {self.user.username}")
+            logger.info(f"Backend connection closed for user {self.user.email}")
             await self.close(code=1000)
         except Exception as e:
             logger.error(f"Error in backend forwarding: {e}", exc_info=True)
@@ -235,7 +243,7 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
 
                 if idle_duration > WS_IDLE_TIMEOUT:
                     logger.info(
-                        f"Closing idle WebSocket for user {self.user.username} "
+                        f"Closing idle WebSocket for user {self.user.email} "
                         f"(idle for {idle_duration:.0f}s)"
                     )
                     await self.close(code=1000)
