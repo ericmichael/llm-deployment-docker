@@ -2,59 +2,44 @@
 FROM nikolaik/python-nodejs:python3.10-nodejs18-slim
 
 # Set environment variables
-ENV APP_HOME=/usr/src/app \
-	PATH=/home/pn/.local/bin:$PATH
+ENV APP_HOME=/usr/src/app
 
 # Set working directory in the container
 WORKDIR $APP_HOME
 
-# Install PostgreSQL client libraries
+# === ROOT OPERATIONS ===
 USER root
+
+# Install PostgreSQL client libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
-USER pn
 
-# Copy only the requirements.txt first, for better cache on builds
+# Copy scripts and make executable (as root)
+COPY entrypoint.sh /entrypoint.sh
+COPY start.sh /start.sh
+RUN chmod +x /entrypoint.sh /start.sh
+
+# Set ownership of app directory
+RUN chown -R pn:pn $APP_HOME
+
+# Install Python dependencies (system-wide, so root can use them at runtime)
 COPY requirements.txt ./
-
-# Install Python dependencies
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
-# Apply patches to litellm (unmerged fixes for Azure realtime WebSocket)
-COPY patches/ /tmp/patches/
-RUN cp /tmp/patches/litellm_azure_realtime.py /usr/local/lib/python3.10/site-packages/litellm/llms/azure/realtime/handler.py
+# === USER OPERATIONS ===
+USER pn
 
-# Copy package files for Node dependencies
-COPY package*.json ./
-
-# Install Node dependencies
+# Copy and install Node dependencies
+COPY --chown=pn:pn package*.json ./
 RUN npm install
 
-# Copy the entrypoint script into the container
-COPY entrypoint.sh /entrypoint.sh
-
-# Make the entrypoint script executable
-RUN chmod +x /entrypoint.sh
-
-# Copy the start script into the container
-COPY start.sh /start.sh
-
-# Make the start script executable
-RUN chmod +x /start.sh
-
-# Copy the current directory contents into the container
+# Copy the rest of the application
 COPY --chown=pn:pn . $APP_HOME/
 
 # Run the Webpacker build
 RUN npm run build
-
-# Change the ownership of the .cache directory
-RUN mkdir -p /home/pn/.cache && chown -R pn:pn /home/pn/.cache
-
-# Switch to non-root user
-USER pn
 
 # Make ports available to the world outside this container
 EXPOSE 8000

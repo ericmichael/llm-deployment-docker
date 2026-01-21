@@ -611,7 +611,7 @@ def validate_config(config):
     ), "Missing or empty 'password' in registry config"
 
 
-def setup():
+def setup(no_cache=False):
     """Run the full deployment setup."""
     print("=" * 60)
     print("Rocketship - Azure Deployment for Rails")
@@ -678,10 +678,11 @@ def setup():
     # Build the image
     try:
         print(f'      Building image: {registry["server"]}/{image}:latest')
-        subprocess.run(
-            ["docker", "build", "-t", f'{registry["server"]}/{image}:latest', "."],
-            check=True,
-        )
+        build_cmd = ["docker", "build", "-t", f'{registry["server"]}/{image}:latest']
+        if no_cache:
+            build_cmd.append("--no-cache")
+        build_cmd.append(".")
+        subprocess.run(build_cmd, check=True)
         print("      ✓ Image built")
     except subprocess.CalledProcessError:
         print("Error building Docker image.")
@@ -1024,12 +1025,17 @@ def main():
         nargs="?",
         help="File to download/upload (for download/upload commands)"
     )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Build Docker image without using cache"
+    )
     args = parser.parse_args()
 
     if args.command == "init":
         init()
     elif args.command == "deploy":
-        setup()
+        setup(no_cache=args.no_cache)
     elif args.command == "ssh":
         ssh()
     elif args.command == "logs":
