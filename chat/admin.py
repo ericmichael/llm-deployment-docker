@@ -1,4 +1,4 @@
-from .models import CustomUser, Thread, Message
+from .models import CustomUser
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
@@ -26,7 +26,6 @@ class CustomUserAdmin(UserAdmin):
     search_fields = ('email',)
     ordering = ('email',)
 
+
 # Register your models here
 admin.site.register(CustomUser, CustomUserAdmin)
-admin.site.register(Thread)
-admin.site.register(Message)

@@ -1,36 +1,23 @@
-import requests
+import httpx
 import json
 import logging
 import time
 import uuid
-import asyncio
-from asgiref.sync import sync_to_async
-from .ai.agent import Agent  # Import the Agent class from the current app directory
 
 # Request timeout configuration (seconds)
 REQUEST_TIMEOUT = 120  # 2 minutes for LLM requests
 CONNECT_TIMEOUT = 10   # 10 seconds to establish connection
-from .models import Thread
-from .forms import MessageForm, ThreadForm
+
 from .forms import CustomUserAuthenticationForm
-from django.shortcuts import render, redirect, get_object_or_404
+from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import get_user_model
 from django.contrib.auth.views import LoginView
 from django.conf import settings
-from django.utils import timezone
-from django.views.decorators.http import require_POST
-from django.http import StreamingHttpResponse
+from django.http import StreamingHttpResponse, HttpResponse, JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from asgiref.sync import sync_to_async
 from rest_framework.authtoken.models import Token
-from rest_framework.decorators import (
-    api_view,
-    authentication_classes,
-    permission_classes,
-)
-from rest_framework.authentication import BaseAuthentication
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework.exceptions import AuthenticationFailed
 
 
 logger = logging.getLogger(__name__)
@@ -51,15 +38,13 @@ def _litellm_url(path: str) -> str:
     return f"{_litellm_base_url()}{path}"
 
 
-def _litellm_headers(request_headers, is_streaming=False):
+def _litellm_headers(is_streaming=False):
     headers = {
-        "Content-Type": request_headers.get("CONTENT_TYPE", "application/json"),
+        "Content-Type": "application/json",
     }
     service_key = getattr(settings, "LITELLM_SERVICE_KEY", None)
     if service_key:
         headers["Authorization"] = f"Bearer {service_key}"
-
-    if service_key:
         headers["api-key"] = service_key
 
     if is_streaming:
@@ -67,36 +52,35 @@ def _litellm_headers(request_headers, is_streaming=False):
     return headers
 
 
-class BearerAuthentication(BaseAuthentication):
-    def authenticate(self, request):
-        header = request.META.get("HTTP_AUTHORIZATION")
-        if not header:
-            return None
+async def _authenticate_bearer(request):
+    """Authenticate request using Bearer token. Returns (user, token) or None."""
+    header = request.META.get("HTTP_AUTHORIZATION", "")
+    if not header.startswith("Bearer "):
+        return None
 
-        try:
-            token = header.split(" ")[1]
-        except IndexError:
-            raise AuthenticationFailed("Bearer token not provided")
+    token_key = header[7:]  # Strip "Bearer "
+    if not token_key:
+        return None
 
-        try:
-            user = get_user_model().objects.get(auth_token=token)
-        except get_user_model().DoesNotExist:
-            raise AuthenticationFailed("No such user")
-
-        return (user, token)
+    try:
+        token = await sync_to_async(Token.objects.select_related("user").get)(key=token_key)
+        return (token.user, token_key)
+    except Token.DoesNotExist:
+        return None
 
 
-@api_view(["GET", "POST", "PUT", "DELETE", "PATCH"])
-@authentication_classes([BearerAuthentication])
-@permission_classes([IsAuthenticated])
-def litellm_proxy_catchall(request, path=""):
+@csrf_exempt
+async def litellm_proxy_catchall(request, path=""):
     """
     Catch-all proxy that forwards all requests to LiteLLM.
 
     Supports all HTTP methods (GET, POST, PUT, DELETE, PATCH) and handles
     both streaming and non-streaming requests.
     """
-    from django.http import HttpResponse
+    # Authenticate
+    auth_result = await _authenticate_bearer(request)
+    if auth_result is None:
+        return JsonResponse({"error": "Authentication required"}, status=401)
 
     # Prepend /v1/ if the path doesn't already start with it
     if not path.startswith("v1/"):
@@ -121,19 +105,21 @@ def litellm_proxy_catchall(request, path=""):
                 redacted[k] = v
         return redacted
 
-    # Check if streaming is requested (only for POST requests with body)
+    # Parse request body for POST/PUT/PATCH
     is_streaming = False
     request_data = None
     if request.method in ["POST", "PUT", "PATCH"]:
         try:
-            request_data = request.data
-            is_streaming = bool(request_data.get("stream", False))
-        except Exception:
+            body = request.body
+            if body:
+                request_data = json.loads(body)
+                is_streaming = bool(request_data.get("stream", False))
+        except (json.JSONDecodeError, Exception):
             request_data = {}
             is_streaming = False
 
     # Prepare headers
-    headers = _litellm_headers(request.META, is_streaming=is_streaming)
+    headers = _litellm_headers(is_streaming=is_streaming)
 
     # Log outgoing request
     if debug:
@@ -155,99 +141,74 @@ def litellm_proxy_catchall(request, path=""):
                 upstream_url,
             )
 
-    # Make the request based on HTTP method
     method = request.method.lower()
-    request_func = getattr(requests, method)
+    timeout = httpx.Timeout(REQUEST_TIMEOUT, connect=CONNECT_TIMEOUT)
+    query_params = dict(request.GET)
 
     try:
         if is_streaming:
-            # Streaming response
-            headers.setdefault("Accept", "text/event-stream")
+            # Streaming response using async httpx
+            headers["Accept"] = "text/event-stream"
 
             async def generate():
-                """Async generator for streaming responses in ASGI mode."""
-                from asgiref.sync import sync_to_async
-                import asyncio
-                from requests import exceptions as requests_exceptions
-
+                """Async generator for streaming responses."""
                 start = time.monotonic()
 
-                def make_request():
-                    return request_func(
-                        upstream_url,
-                        json=request_data,
-                        params=request.GET.dict(),
-                        headers=headers,
-                        stream=True,
-                        timeout=(CONNECT_TIMEOUT, REQUEST_TIMEOUT),
-                    )
-                
                 def serialize_error(message):
                     return json.dumps({"error": message})
 
                 done_event = "event: done\ndata: [DONE]\n\n"
-                response = None
-                try:
-                    response = await sync_to_async(
-                        make_request, thread_sensitive=True
-                    )()
-                except requests_exceptions.RequestException as exc:
-                    message = str(exc)
-                    logger.error(
-                        "[LiteLLMProxy][%s] Streaming connect failure in %.3fs: %s",
-                        request_id,
-                        time.monotonic() - start,
-                        message,
-                    )
-                    payload = serialize_error(message)
-                    yield f"event: error\ndata: {payload}\n\n"
-                    yield done_event
-                    return
 
                 try:
-                    if response.status_code >= 400:
-                        try:
-                            body = response.json()
-                            text = json.dumps(body)
-                        except Exception:
-                            text = response.text
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        async with client.stream(
+                            method,
+                            upstream_url,
+                            json=request_data,
+                            params=query_params,
+                            headers=headers,
+                        ) as response:
+                            if response.status_code >= 400:
+                                body = await response.aread()
+                                try:
+                                    text = body.decode("utf-8")
+                                except Exception:
+                                    text = str(body)
 
-                        if debug:
-                            logger.debug(
-                                "[LiteLLMProxy][%s] Upstream ERROR %s in %.3fs | body.preview=%s",
-                                request_id,
-                                response.status_code,
-                                time.monotonic() - start,
-                                text[:2048],
-                            )
-                        yield f"event: error\ndata: {text}\n\n"
-                        yield done_event
-                        return
+                                if debug:
+                                    logger.debug(
+                                        "[LiteLLMProxy][%s] Upstream ERROR %s in %.3fs | body.preview=%s",
+                                        request_id,
+                                        response.status_code,
+                                        time.monotonic() - start,
+                                        text[:2048],
+                                    )
+                                yield f"event: error\ndata: {text}\n\n"
+                                yield done_event
+                                return
 
-                    if debug:
-                        logger.debug(
-                            "[LiteLLMProxy][%s] Upstream CONNECTED %s in %.3fs",
-                            request_id,
-                            response.status_code,
-                            time.monotonic() - start,
-                        )
+                            if debug:
+                                logger.debug(
+                                    "[LiteLLMProxy][%s] Upstream CONNECTED %s in %.3fs",
+                                    request_id,
+                                    response.status_code,
+                                    time.monotonic() - start,
+                                )
 
-                    i = 0
-                    for chunk in response.iter_lines():
-                        if chunk is None:
-                            continue
-                        line = chunk.decode("utf-8", errors="replace")
-                        if debug and i == 0:
-                            logger.debug(
-                                "[LiteLLMProxy][%s] First SSE line: %s",
-                                request_id,
-                                line[:512],
-                            )
-                        yield line + "\n"
-                        i += 1
-                        if i % 10 == 0:
-                            await asyncio.sleep(0)
-                except requests_exceptions.RequestException as exc:
+                            i = 0
+                            async for line in response.aiter_lines():
+                                if not line:
+                                    continue
+                                if debug and i == 0:
+                                    logger.debug(
+                                        "[LiteLLMProxy][%s] First SSE line: %s",
+                                        request_id,
+                                        line[:512],
+                                    )
+                                yield line + "\n"
+                                i += 1
+
+                except httpx.RequestError as exc:
                     message = str(exc)
                     logger.error(
                         "[LiteLLMProxy][%s] Streaming failure after %.3fs: %s",
@@ -259,8 +220,6 @@ def litellm_proxy_catchall(request, path=""):
                     yield f"event: error\ndata: {payload}\n\n"
                     yield done_event
                 except Exception as exc:
-                    if isinstance(exc, asyncio.CancelledError):
-                        raise
                     message = str(exc)
                     logger.error(
                         "[LiteLLMProxy][%s] Unexpected streaming error after %.3fs: %s",
@@ -272,9 +231,6 @@ def litellm_proxy_catchall(request, path=""):
                     payload = serialize_error(message)
                     yield f"event: error\ndata: {payload}\n\n"
                     yield done_event
-                finally:
-                    if response is not None:
-                        response.close()
 
             resp = StreamingHttpResponse(generate(), content_type="text/event-stream")
             if debug:
@@ -284,13 +240,14 @@ def litellm_proxy_catchall(request, path=""):
         else:
             # Non-streaming response
             start = time.monotonic()
-            response = request_func(
-                upstream_url,
-                json=request_data if method in ["post", "put", "patch"] else None,
-                params=request.GET.dict(),
-                headers=headers,
-                timeout=(CONNECT_TIMEOUT, REQUEST_TIMEOUT),
-            )
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.request(
+                    method,
+                    upstream_url,
+                    json=request_data if method in ["post", "put", "patch"] else None,
+                    params=query_params,
+                    headers=headers,
+                )
             elapsed = time.monotonic() - start
 
             # Attempt JSON; fallback to text
@@ -312,7 +269,7 @@ def litellm_proxy_catchall(request, path=""):
                 )
 
             if is_json:
-                resp = Response(body, status=response.status_code)
+                resp = JsonResponse(body, status=response.status_code, safe=False)
             else:
                 resp = HttpResponse(
                     body,
@@ -333,157 +290,25 @@ def litellm_proxy_catchall(request, path=""):
             str(e),
             exc_info=True,
         )
-        return Response(
-            {"error": str(e)},
-            status=500,
-        )
+        return JsonResponse({"error": str(e)}, status=500)
 
 
 @login_required
 def developer_settings(request):
+    """Display API credentials for the authenticated user."""
     # Get or create the user's token
     token, created = Token.objects.get_or_create(user=request.user)
 
-    # Get the hostname from the request and concatenate it with /api/v1
+    # Build the API base URL, ensuring HTTPS
     api_base = request.build_absolute_uri("/chat/api/v1")
-    api_base = (
-        api_base.replace("http://", "https://") if not request.is_secure() else api_base
-    )
+    if not request.is_secure():
+        api_base = api_base.replace("http://", "https://")
 
-    # Use the token as the API key
-    api_key = token.key
-
-    code_block_install = """
-pip install -U openai
-pip install -U python-dotenv
-    """
-
-    code_block_env = f"""
-OPENAI_BASE_URL={api_base}
-OPENAI_API_KEY={api_key}
-"""
-
-    code_block_api_call = """
-import os
-import openai
-from dotenv import load_dotenv
-
-load_dotenv()  # take environment variables from .env
-
-client = OpenAI(
-    base_url=os.environ.get("OPENAI_BASE_URL"),
-    api_key=os.environ.get("OPENAI_API_KEY"),
-)
-
-prompt = "You are a helpful assistant"
-message = "Hi! Help me write a 'hello world' program in Java."
-
-messages = [
-    {"role": "system", "content": prompt},
-    {"role": "user", "content": message}
-]
-
-model = "gpt-3.5-turbo"     # use gpt-3.5-turbo model
-temperature = 0     # controls randomness
-
-# Make an API call to the OpenAI ChatCompletion endpoint with the model and messages
-completion = client.chat.completions.create(
-    model=model,
-    messages=messages,
-    temperature=temperature
-)
-
-ai_reply = completion.choices[0].message.content.strip()
-print(ai_reply)
-"""
-
-    code_block_git_ignore = """
-# ... your previous .gitignore
-.env    # add this line
-"""
     return render(
         request,
         "settings/index.html",
         {
             "api_base": api_base,
-            "api_key": api_key,
-            "code_block_install": code_block_install,
-            "code_block_env": code_block_env,
-            "code_block_api_call": code_block_api_call,
-            "code_block_git_ignore": code_block_git_ignore,
+            "api_key": token.key,
         },
-    )
-
-
-@login_required
-def thread_list(request):
-    return render(request, "chat/empty_state.html")
-
-
-@login_required
-def thread_detail(request, pk):
-    # Check if the thread belongs to the user
-    thread = get_object_or_404(Thread, pk=pk, user=request.user)
-    messages = thread.message_set.all()
-    return render(
-        request,
-        "chat/thread_detail.html",
-        {
-            "thread": thread,
-            "messages": messages,
-        },
-    )
-
-
-@login_required
-def create_thread(request):
-    # Generate a default name for the thread, e.g., "Chat on <current date>"
-    default_name = f"Chat on {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}"
-
-    # Create a new thread with the default name
-    new_thread = Thread.objects.create(name=default_name, user=request.user)
-
-    # Redirect the user to the new thread's detail page
-    return redirect("thread_detail", pk=new_thread.pk)
-
-
-@login_required
-@require_POST
-def delete_thread(request, pk):
-    thread = get_object_or_404(
-        Thread, pk=pk, user=request.user
-    )  # Check if the thread belongs to the user
-    thread.delete()
-    return redirect("thread_list")  # Redirect to the thread list view
-
-
-@login_required
-async def new_message(request, pk):
-    thread = await sync_to_async(get_object_or_404)(Thread, pk=pk)
-    if request.method == "POST":
-        form = MessageForm(request.POST)
-        thread_form = ThreadForm(
-            request.POST, instance=thread
-        )  # Pass the current thread instance
-
-        form_valid = await sync_to_async(lambda: form.is_valid())()
-        thread_form_valid = await sync_to_async(lambda: thread_form.is_valid())()
-
-        if form_valid and thread_form_valid:
-            message = await sync_to_async(form.save)(commit=False)
-            thread = await sync_to_async(thread_form.save)()  # Save the thread form to update the thread
-            agent = Agent(thread=thread, prompt=thread.prompt)
-            # Run the blocking chat call in a thread pool to avoid blocking the event loop
-            await asyncio.to_thread(agent.chat, message.content)
-            return redirect("thread_detail", pk=thread.pk)
-        else:
-            print(form.errors)
-            print(thread_form.errors)
-    else:
-        form = MessageForm()
-        thread_form = ThreadForm(instance=thread)  # Pass the current thread instance
-    return await sync_to_async(render)(
-        request,
-        "chat/new_message.html",
-        {"form": form, "thread_form": thread_form, "thread": thread},
     )

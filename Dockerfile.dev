@@ -10,10 +10,13 @@ ENV APP_HOME=/usr/src/app \
 # Set working directory
 WORKDIR $APP_HOME
 
-# Install system dependencies (curl for health checks)
+# Install system dependencies (curl for health checks, PostgreSQL client)
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends curl && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    libpq-dev \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files first for better caching
 COPY requirements.txt package*.json ./
@@ -34,7 +37,7 @@ COPY start.sh /start.sh
 RUN chmod +x /entrypoint.sh /start.sh
 
 # Create directories and set permissions
-RUN mkdir -p /home/pn/.cache $APP_HOME/db/sqlite3 $APP_HOME/staticfiles && \
+RUN mkdir -p /home/pn/.cache $APP_HOME/staticfiles && \
     chown -R pn:pn /home/pn/.cache $APP_HOME
 
 # Switch to non-root user

@@ -7,7 +7,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="turbo-cache-control" content="no-preview">
-    <title>Chat App</title>
+    <title>API Portal</title>
     <!-- Include Tailwind CSS from CDN -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
@@ -16,46 +16,33 @@
 </head>
 
 <body class="bg-gray-100">
-    <main class="flex w-full h-screen">
-        {% include '_sidebar.html' %}
-        <!-- Main Content -->
-        <div class="flex-1 flex-grow">
-            {% block content %}{% endblock %}
+    <!-- Top Navigation Bar -->
+    <nav class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <a href="{% url 'settings' %}" class="text-xl font-semibold text-gray-900">
+                        API Portal
+                    </a>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="{% url 'settings' %}" class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
+                        <i class="fas fa-cog mr-1"></i> Settings
+                    </a>
+                    <form method="post" action="{% url 'logout' %}" class="inline">
+                        {% csrf_token %}
+                        <button type="submit" class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
+                            <i class="fas fa-sign-out-alt mr-1"></i> Logout
+                        </button>
+                    </form>
+                </div>
+            </div>
         </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        {% block content %}{% endblock %}
     </main>
-
-    <script>
-        function toggleMenu(event, menuId, isLast) {
-            event.stopPropagation();
-            var menu = document.getElementById(menuId);
-            var button = event.currentTarget;
-            var rect = button.getBoundingClientRect();
-
-            menu.classList.toggle('hidden');
-
-            if (!menu.classList.contains('hidden')) {
-                // Position the menu relative to the button
-                var menuRect = menu.getBoundingClientRect();
-                var topPosition = rect.bottom;
-                var leftPosition = rect.left - menu.offsetWidth + button.offsetWidth;
-
-                // Check if menu would go below viewport
-                if (topPosition + menuRect.height > window.innerHeight) {
-                    topPosition = rect.top - menuRect.height;
-                }
-
-                menu.style.top = `${topPosition}px`;
-                menu.style.left = `${leftPosition}px`;
-            }
-        }
-
-        // Close the pop-up menu when clicking outside of it
-        window.addEventListener('click', function () {
-            document.querySelectorAll('.pop-up-menu').forEach(function (menu) {
-                menu.classList.add('hidden');
-            });
-        });
-    </script>
 </body>
 
 </html>

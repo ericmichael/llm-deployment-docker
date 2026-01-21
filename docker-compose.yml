@@ -1,0 +1,50 @@
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:16-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aistarterkit
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Django application service
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8081:8000"  # Django + WebSocket (host:container)
+      - "4001:4000"  # LiteLLM proxy (host:container)
+    volumes:
+      # Mount source code for live reload
+      - .:/usr/src/app
+      # Persist node_modules (avoid overwriting with local)
+      - /usr/src/app/node_modules
+    env_file:
+      - .env
+    environment:
+      # PostgreSQL connection (for Django)
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/aistarterkit
+      # Disable LiteLLM's database (it tries to use DATABASE_URL with Prisma)
+      LITELLM_DATABASE_URL: ""
+      # Development settings
+      ENVIRONMENT: development
+      LITELLM_BASE_URL: http://127.0.0.1:4000
+      LITELLM_MASTER_KEY: ${LITELLM_SERVICE_KEY}
+    stdin_open: true
+    tty: true
+
+volumes:
+  postgres_data:

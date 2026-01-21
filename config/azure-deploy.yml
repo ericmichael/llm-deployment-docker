@@ -12,9 +12,9 @@ azure:
     app_name: csci3351
     resource_group: cs-rg-4341-scus
     additional_env:
+      DATABASE_URL: ${DATABASE_URL}
       CHROMADB_STORAGE_PATH: /home/app/db/chromadb/
       DUCKDB_STORAGE_PATH: /home/app/db/duckdb/
-      SQLITE3_STORAGE_PATH: /home/app/db/sqlite3/
       WEBSITES_CONTAINER_START_TIME_LIMIT: 500
       CUSTOM_HOSTNAME: rgvaiclass.com
       WEBSITES_ENABLE_APP_SERVICE_STORAGE: true

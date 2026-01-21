@@ -8,6 +8,14 @@ ENV APP_HOME=/usr/src/app \
 # Set working directory in the container
 WORKDIR $APP_HOME
 
+# Install PostgreSQL client libraries
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+USER pn
+
 # Copy only the requirements.txt first, for better cache on builds
 COPY requirements.txt ./
 

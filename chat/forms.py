@@ -1,8 +1,5 @@
 # chat/forms.py
 from django import forms
-from .models import Thread, Message
-
-from django import forms
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth import get_user_model
 
@@ -31,28 +28,3 @@ class CustomUserAuthenticationForm(AuthenticationForm):
     class Meta:
         model = get_user_model()
         fields = ("email", "password")
-
-
-class ThreadForm(forms.ModelForm):
-    name = forms.CharField(required=False)
-    model = forms.ChoiceField(
-        choices=Thread.MODEL_CHOICES,
-        widget=forms.Select(
-            attrs={
-                "class": "mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            }
-        ),
-        required=False,
-    )
-    temperature = forms.FloatField(required=False)
-    prompt = forms.CharField(required=False)
-
-    class Meta:
-        model = Thread
-        fields = ["name", "model", "temperature", "prompt"]
-
-
-class MessageForm(forms.ModelForm):
-    class Meta:
-        model = Message
-        fields = ["content"]

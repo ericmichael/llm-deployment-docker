@@ -28,7 +28,8 @@ is_running() {
 start_litellm() {
     while true; do
         echo "[$(date)] Starting LiteLLM proxy on port 4000..."
-        litellm --config config/litellm-config.yaml --host 0.0.0.0 --port 4000 >> /tmp/logs/litellm.log 2>&1 &
+        # Run litellm without DATABASE_URL (it tries to use Prisma if set)
+        (unset DATABASE_URL; litellm --config config/litellm-config.yaml --host 0.0.0.0 --port 4000) >> /tmp/logs/litellm.log 2>&1 &
         LITELLM_PID=$!
         echo "[$(date)] LiteLLM started with PID: $LITELLM_PID"
 
@@ -78,8 +79,12 @@ LITELLM_SUPERVISOR_PID=$!
 # Wait for LiteLLM to be ready
 echo "Waiting for LiteLLM to be ready..."
 MAX_WAIT=60
+LITELLM_AUTH_HEADER=""
+if [ -n "$LITELLM_SERVICE_KEY" ]; then
+    LITELLM_AUTH_HEADER="Authorization: Bearer $LITELLM_SERVICE_KEY"
+fi
 for i in $(seq 1 $MAX_WAIT); do
-    if curl -s http://localhost:4000/health > /dev/null 2>&1; then
+    if curl -s -H "$LITELLM_AUTH_HEADER" http://localhost:4000/health > /dev/null 2>&1; then
         echo "LiteLLM health check passed!"
         sleep 2
         echo "LiteLLM is ready!"

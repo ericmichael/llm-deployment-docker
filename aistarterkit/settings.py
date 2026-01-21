@@ -11,11 +11,21 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 import os
+import warnings
 from pathlib import Path
 from dotenv import load_dotenv
+import dj_database_url
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Suppress Django's StreamingHttpResponse async iterator warning
+# This is a known issue when running ASGI - the warning doesn't affect functionality
+warnings.filterwarnings(
+    "ignore",
+    message="StreamingHttpResponse must consume synchronous iterators",
+    category=Warning,
+)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -111,9 +121,7 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "aistarterkit.urls"
-LOGIN_REDIRECT_URL = (
-    "thread_list"  # or 'thread_list' or any other view you want to redirect to
-)
+LOGIN_REDIRECT_URL = "settings"  # Redirect to developer settings after login
 LOGOUT_REDIRECT_URL = "login"  # Assuming 'login' is the name of your login URL pattern
 
 TEMPLATES = [
@@ -127,7 +135,6 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
-                "chat.context_processors.thread_list",  # Add this line
             ],
         },
     },
@@ -139,52 +146,15 @@ ASGI_APPLICATION = "aistarterkit.asgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-
-
-# Get the SQLite storage path from the environment variable
-sqlite_storage_path = os.getenv("SQLITE3_STORAGE_PATH")
-
-if not sqlite_storage_path:
-    # Otherwise, use BASE_DIR as the directory
-    sqlite_storage_path = Path(BASE_DIR) / "db/sqlite3/"
-
-# Create the directory if it doesn't exist
-os.makedirs(sqlite_storage_path, exist_ok=True)
-db_path = Path(sqlite_storage_path) / "db.sqlite3"
-
+# Uses PostgreSQL via DATABASE_URL environment variable
 
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": str(db_path),
-        "OPTIONS": {
-            "timeout": 30,  # Wait up to 30 seconds for locks
-            "init_command": (
-                "PRAGMA journal_mode=WAL;"  # Write-Ahead Logging for better concurrency
-                "PRAGMA synchronous=NORMAL;"  # Balance between safety and speed
-                "PRAGMA cache_size=-64000;"  # 64MB cache
-                "PRAGMA busy_timeout=30000;"  # 30 second busy timeout
-                "PRAGMA temp_store=MEMORY;"  # Store temp tables in memory
-            ),
-        },
-    }
+    "default": dj_database_url.config(
+        default=os.getenv("DATABASE_URL"),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 }
-
-
-def configure_sqlite_connection(sender, connection, **kwargs):
-    """Configure SQLite connection with performance optimizations."""
-    if connection.vendor == "sqlite":
-        cursor = connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL;")
-        cursor.execute("PRAGMA synchronous=NORMAL;")
-        cursor.execute("PRAGMA cache_size=-64000;")
-        cursor.execute("PRAGMA busy_timeout=30000;")
-        cursor.execute("PRAGMA temp_store=MEMORY;")
-        cursor.execute("PRAGMA mmap_size=268435456;")  # 256MB memory-mapped I/O
-
-
-from django.db.backends.signals import connection_created
-connection_created.connect(configure_sqlite_connection)
 
 
 # Password validation

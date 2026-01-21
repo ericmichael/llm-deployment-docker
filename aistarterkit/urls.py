@@ -39,7 +39,10 @@ def health_check(request):
     # Check LiteLLM connectivity
     try:
         import requests
-        resp = requests.get("http://localhost:4000/health", timeout=5)
+        from django.conf import settings as django_settings
+        litellm_key = getattr(django_settings, "LITELLM_SERVICE_KEY", None)
+        headers = {"Authorization": f"Bearer {litellm_key}"} if litellm_key else {}
+        resp = requests.get("http://localhost:4000/health", headers=headers, timeout=5)
         if resp.status_code == 200:
             health_status["checks"]["litellm"] = "ok"
         else:
@@ -55,7 +58,7 @@ def health_check(request):
 
 urlpatterns = [
     path('health/', health_check, name='health_check'),
-    path('', RedirectView.as_view(pattern_name='thread_list', permanent=False)),  # Redirect to /chat
+    path('', RedirectView.as_view(pattern_name='settings', permanent=False)),  # Redirect to settings
     path('login/', CustomLoginView.as_view(), name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('admin/', admin.site.urls),
