@@ -5,64 +5,110 @@ echo "=========================================="
 echo "Starting LLM Deployment Container"
 echo "=========================================="
 
+# Configuration
+WORKERS=${GUNICORN_WORKERS:-4}  # Default to 4 workers for 4 vCPU
+WORKER_TIMEOUT=${GUNICORN_TIMEOUT:-120}  # 2 minute timeout for LLM requests
+WORKER_CLASS="uvicorn.workers.UvicornWorker"
+MAX_REQUESTS=${GUNICORN_MAX_REQUESTS:-1000}  # Recycle workers periodically
+MAX_REQUESTS_JITTER=${GUNICORN_MAX_REQUESTS_JITTER:-50}
+
 # Run the entrypoint script (migrations, collectstatic, etc.)
 echo "Running migrations and collecting static files..."
 /entrypoint.sh echo "Entrypoint tasks completed"
 
-# Start LiteLLM proxy in the background
-echo ""
-echo "Starting LiteLLM proxy on port 4000..."
-litellm --config config/litellm-config.yaml --host 0.0.0.0 --port 4000 > /tmp/litellm.log 2>&1 &
-LITELLM_PID=$!
-echo "LiteLLM started with PID: $LITELLM_PID"
+# Create log directory
+mkdir -p /tmp/logs
 
-# Give LiteLLM a moment to start
+# Function to check if a process is running
+is_running() {
+    kill -0 "$1" 2>/dev/null
+}
+
+# Function to start LiteLLM with auto-restart
+start_litellm() {
+    while true; do
+        echo "[$(date)] Starting LiteLLM proxy on port 4000..."
+        litellm --config config/litellm-config.yaml --host 0.0.0.0 --port 4000 >> /tmp/logs/litellm.log 2>&1 &
+        LITELLM_PID=$!
+        echo "[$(date)] LiteLLM started with PID: $LITELLM_PID"
+
+        # Wait for process to exit
+        wait $LITELLM_PID || true
+        EXIT_CODE=$?
+
+        echo "[$(date)] LiteLLM exited with code $EXIT_CODE, restarting in 5 seconds..."
+        sleep 5
+    done
+}
+
+# Function to start Gunicorn with auto-restart
+start_gunicorn() {
+    while true; do
+        echo "[$(date)] Starting Gunicorn with $WORKERS workers on port 8000..."
+        gunicorn aistarterkit.asgi:application \
+            --bind 0.0.0.0:8000 \
+            --workers $WORKERS \
+            --worker-class $WORKER_CLASS \
+            --timeout $WORKER_TIMEOUT \
+            --graceful-timeout 30 \
+            --keep-alive 65 \
+            --max-requests $MAX_REQUESTS \
+            --max-requests-jitter $MAX_REQUESTS_JITTER \
+            --access-logfile /tmp/logs/gunicorn-access.log \
+            --error-logfile /tmp/logs/gunicorn-error.log \
+            --capture-output \
+            --enable-stdio-inheritance \
+            >> /tmp/logs/gunicorn.log 2>&1 &
+        GUNICORN_PID=$!
+        echo "[$(date)] Gunicorn started with PID: $GUNICORN_PID"
+
+        # Wait for process to exit
+        wait $GUNICORN_PID || true
+        EXIT_CODE=$?
+
+        echo "[$(date)] Gunicorn exited with code $EXIT_CODE, restarting in 5 seconds..."
+        sleep 5
+    done
+}
+
+# Start LiteLLM supervisor in background
+start_litellm &
+LITELLM_SUPERVISOR_PID=$!
+
+# Wait for LiteLLM to be ready
 echo "Waiting for LiteLLM to be ready..."
 MAX_WAIT=60
 for i in $(seq 1 $MAX_WAIT); do
-    # Check if LiteLLM health endpoint is responding
     if curl -s http://localhost:4000/health > /dev/null 2>&1; then
         echo "LiteLLM health check passed!"
-        # Give it a couple more seconds to fully initialize
-        sleep 3
+        sleep 2
         echo "LiteLLM is ready!"
         break
     fi
     if [ $i -eq $MAX_WAIT ]; then
-        echo "ERROR: LiteLLM failed to become ready after ${MAX_WAIT} seconds"
-        echo "LiteLLM logs:"
-        cat /tmp/litellm.log
-        exit 1
+        echo "WARNING: LiteLLM not responding after ${MAX_WAIT} seconds, continuing anyway..."
     fi
     echo "Waiting for LiteLLM... ($i/$MAX_WAIT)"
     sleep 1
 done
 
-# Check if LiteLLM is still running
-if ! kill -0 $LITELLM_PID 2>/dev/null; then
-    echo "ERROR: LiteLLM failed to start!"
-    cat /tmp/litellm.log
-    exit 1
-fi
-echo "LiteLLM is running successfully"
+# Start Gunicorn supervisor in background
+start_gunicorn &
+GUNICORN_SUPERVISOR_PID=$!
 
-# Start Django with Daphne (ASGI server for WebSocket support)
-echo ""
-echo "Starting Django with Daphne on port 8000..."
-daphne -b 0.0.0.0 -p 8000 aistarterkit.asgi:application > /tmp/daphne.log 2>&1 &
-DAPHNE_PID=$!
-echo "Daphne started with PID: $DAPHNE_PID"
-
-# Give Daphne a moment to start
-sleep 2
-
-# Check if Daphne is still running
-if ! kill -0 $DAPHNE_PID 2>/dev/null; then
-    echo "ERROR: Daphne failed to start!"
-    cat /tmp/daphne.log
-    exit 1
-fi
-echo "Daphne is running successfully"
+# Wait for Gunicorn to be ready
+echo "Waiting for Django to be ready..."
+sleep 3
+for i in $(seq 1 30); do
+    if curl -s http://localhost:8000/health/ > /dev/null 2>&1; then
+        echo "Django health check passed!"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "WARNING: Django not responding after 30 seconds"
+    fi
+    sleep 1
+done
 
 echo ""
 echo "=========================================="
@@ -70,41 +116,40 @@ echo "Services Started Successfully"
 echo "  - LiteLLM Proxy: http://0.0.0.0:4000"
 echo "  - Django App:    http://0.0.0.0:8000"
 echo "  - WebSocket:     ws://0.0.0.0:8000/ws/realtime"
+echo "  - Health Check:  http://0.0.0.0:8000/health/"
+echo "  - Workers:       $WORKERS"
 echo "=========================================="
 echo ""
-echo "Tailing logs (Ctrl+C to view both logs)..."
 
-# Tail both log files
-tail -f /tmp/litellm.log /tmp/daphne.log &
+# Tail all log files
+tail -f /tmp/logs/*.log &
 TAIL_PID=$!
 
 # Function to handle shutdown
 shutdown() {
     echo ""
-    echo "Shutting down services..."
-    kill $LITELLM_PID 2>/dev/null || true
-    kill $DAPHNE_PID 2>/dev/null || true
+    echo "[$(date)] Shutting down services gracefully..."
+
+    # Kill supervisor processes (they manage the actual services)
+    kill $LITELLM_SUPERVISOR_PID 2>/dev/null || true
+    kill $GUNICORN_SUPERVISOR_PID 2>/dev/null || true
     kill $TAIL_PID 2>/dev/null || true
+
+    # Send SIGTERM to all child processes for graceful shutdown
+    pkill -TERM -P $$ 2>/dev/null || true
+
+    # Wait briefly for graceful shutdown
+    sleep 2
+
+    # Force kill remaining processes
+    pkill -KILL -P $$ 2>/dev/null || true
+
+    echo "[$(date)] Shutdown complete"
     exit 0
 }
 
-# Trap SIGTERM and SIGINT
-trap shutdown SIGTERM SIGINT
+# Trap signals for graceful shutdown
+trap shutdown SIGTERM SIGINT SIGQUIT
 
-# Wait for either process to exit
-wait -n $LITELLM_PID $DAPHNE_PID
-
-# If we get here, one of the processes exited
-EXIT_CODE=$?
-echo "A service has exited with code: $EXIT_CODE"
-
-# Show recent logs
-echo ""
-echo "Recent LiteLLM logs:"
-tail -20 /tmp/litellm.log
-echo ""
-echo "Recent Daphne logs:"
-tail -20 /tmp/daphne.log
-
-# Cleanup
-shutdown
+# Wait for supervisor processes
+wait $LITELLM_SUPERVISOR_PID $GUNICORN_SUPERVISOR_PID

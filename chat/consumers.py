@@ -17,6 +17,14 @@ from urllib.parse import parse_qs, urlencode
 
 logger = logging.getLogger(__name__)
 
+# WebSocket configuration
+WS_MAX_SIZE = 10 * 1024 * 1024  # 10 MB max message size
+WS_CONNECT_TIMEOUT = 30  # 30 seconds to connect to backend
+WS_CLOSE_TIMEOUT = 10  # 10 seconds for close handshake
+WS_PING_INTERVAL = 20  # Send ping every 20 seconds
+WS_PING_TIMEOUT = 20  # Wait 20 seconds for pong response
+WS_IDLE_TIMEOUT = 300  # 5 minutes idle timeout
+
 
 class RealtimeProxyConsumer(AsyncWebsocketConsumer):
     """
@@ -111,16 +119,29 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
 
         try:
             logger.info(f"Connecting to LiteLLM: {litellm_url}")
-            self.backend_ws = await websockets.connect(
-                litellm_url,
-                additional_headers=headers,
-                max_size=None  # Allow unlimited message size for audio
+            self.backend_ws = await asyncio.wait_for(
+                websockets.connect(
+                    litellm_url,
+                    additional_headers=headers,
+                    max_size=WS_MAX_SIZE,
+                    close_timeout=WS_CLOSE_TIMEOUT,
+                    ping_interval=WS_PING_INTERVAL,
+                    ping_timeout=WS_PING_TIMEOUT,
+                ),
+                timeout=WS_CONNECT_TIMEOUT,
             )
 
-            # Start bidirectional forwarding
+            # Track last activity for idle timeout
+            self.last_activity = asyncio.get_event_loop().time()
+
+            # Start bidirectional forwarding and idle timeout checker
             self.forward_task = asyncio.create_task(self.forward_from_backend())
+            self.idle_task = asyncio.create_task(self.check_idle_timeout())
             logger.info(f"WebSocket proxy established for user {self.user.username}")
 
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout connecting to LiteLLM after {WS_CONNECT_TIMEOUT}s")
+            await self.close(code=1011)
         except Exception as e:
             logger.error(f"Failed to connect to LiteLLM: {e}", exc_info=True)
             await self.close(code=1011)
@@ -130,6 +151,7 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
         Handle WebSocket disconnection.
 
         - Cancel forwarding task
+        - Cancel idle timeout task
         - Close backend connection
         """
         logger.info(f"WebSocket disconnecting for user {getattr(self, 'user', 'unknown')}: code={close_code}")
@@ -139,6 +161,14 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
             self.forward_task.cancel()
             try:
                 await self.forward_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel idle timeout task
+        if hasattr(self, 'idle_task'):
+            self.idle_task.cancel()
+            try:
+                await self.idle_task
             except asyncio.CancelledError:
                 pass
 
@@ -154,6 +184,9 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
             text_data: Text message from client
             bytes_data: Binary message from client
         """
+        # Update last activity timestamp
+        self.last_activity = asyncio.get_event_loop().time()
+
         if hasattr(self, 'backend_ws'):
             try:
                 if text_data:
@@ -173,6 +206,9 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
         """
         try:
             async for message in self.backend_ws:
+                # Update last activity timestamp
+                self.last_activity = asyncio.get_event_loop().time()
+
                 if isinstance(message, bytes):
                     await self.send(bytes_data=message)
                 else:
@@ -183,3 +219,28 @@ class RealtimeProxyConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             logger.error(f"Error in backend forwarding: {e}", exc_info=True)
             await self.close(code=1011)
+
+    async def check_idle_timeout(self):
+        """
+        Check for idle connections and close them after WS_IDLE_TIMEOUT seconds.
+
+        Runs as a background task that periodically checks the last activity
+        timestamp and closes the connection if it's been idle too long.
+        """
+        try:
+            while True:
+                await asyncio.sleep(30)  # Check every 30 seconds
+                current_time = asyncio.get_event_loop().time()
+                idle_duration = current_time - self.last_activity
+
+                if idle_duration > WS_IDLE_TIMEOUT:
+                    logger.info(
+                        f"Closing idle WebSocket for user {self.user.username} "
+                        f"(idle for {idle_duration:.0f}s)"
+                    )
+                    await self.close(code=1000)
+                    break
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Error in idle timeout checker: {e}", exc_info=True)

@@ -3,7 +3,13 @@ import json
 import logging
 import time
 import uuid
+import asyncio
+from asgiref.sync import sync_to_async
 from .ai.agent import Agent  # Import the Agent class from the current app directory
+
+# Request timeout configuration (seconds)
+REQUEST_TIMEOUT = 120  # 2 minutes for LLM requests
+CONNECT_TIMEOUT = 10   # 10 seconds to establish connection
 from .models import Thread
 from .forms import MessageForm, ThreadForm
 from .forms import CustomUserAuthenticationForm
@@ -173,6 +179,7 @@ def litellm_proxy_catchall(request, path=""):
                         params=request.GET.dict(),
                         headers=headers,
                         stream=True,
+                        timeout=(CONNECT_TIMEOUT, REQUEST_TIMEOUT),
                     )
                 
                 def serialize_error(message):
@@ -282,6 +289,7 @@ def litellm_proxy_catchall(request, path=""):
                 json=request_data if method in ["post", "put", "patch"] else None,
                 params=request.GET.dict(),
                 headers=headers,
+                timeout=(CONNECT_TIMEOUT, REQUEST_TIMEOUT),
             )
             elapsed = time.monotonic() - start
 
@@ -450,18 +458,23 @@ def delete_thread(request, pk):
 
 
 @login_required
-def new_message(request, pk):
-    thread = get_object_or_404(Thread, pk=pk)
+async def new_message(request, pk):
+    thread = await sync_to_async(get_object_or_404)(Thread, pk=pk)
     if request.method == "POST":
         form = MessageForm(request.POST)
         thread_form = ThreadForm(
             request.POST, instance=thread
         )  # Pass the current thread instance
-        if form.is_valid() and thread_form.is_valid():
-            message = form.save(commit=False)
-            thread = thread_form.save()  # Save the thread form to update the thread
+
+        form_valid = await sync_to_async(lambda: form.is_valid())()
+        thread_form_valid = await sync_to_async(lambda: thread_form.is_valid())()
+
+        if form_valid and thread_form_valid:
+            message = await sync_to_async(form.save)(commit=False)
+            thread = await sync_to_async(thread_form.save)()  # Save the thread form to update the thread
             agent = Agent(thread=thread, prompt=thread.prompt)
-            agent.chat(message.content)
+            # Run the blocking chat call in a thread pool to avoid blocking the event loop
+            await asyncio.to_thread(agent.chat, message.content)
             return redirect("thread_detail", pk=thread.pk)
         else:
             print(form.errors)
@@ -469,7 +482,7 @@ def new_message(request, pk):
     else:
         form = MessageForm()
         thread_form = ThreadForm(instance=thread)  # Pass the current thread instance
-    return render(
+    return await sync_to_async(render)(
         request,
         "chat/new_message.html",
         {"form": form, "thread_form": thread_form, "thread": thread},

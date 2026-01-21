@@ -52,5 +52,9 @@ USER pn
 EXPOSE 8000
 EXPOSE 4000
 
+# Health check for container orchestration
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:8000/health/ || exit 1
+
 # Run both LiteLLM and Django when the container launches
 CMD ["/start.sh"]

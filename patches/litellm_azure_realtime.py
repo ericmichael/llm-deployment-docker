@@ -4,15 +4,29 @@ This file contains the calling Azure OpenAI's `/openai/realtime` endpoint.
 This requires websockets, and is currently only supported on LiteLLM Proxy.
 """
 
+import ssl
 from typing import Any, Optional, cast
 
 from litellm.constants import REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES
 
 from ....litellm_core_utils.litellm_logging import Logging as LiteLLMLogging
 from ....litellm_core_utils.realtime_streaming import RealTimeStreaming
-from ....llms.custom_httpx.http_handler import get_shared_realtime_ssl_context
 from ..azure import AzureChatCompletion
 from litellm._logging import verbose_proxy_logger
+
+try:
+    import certifi
+    SSL_CA_FILE = certifi.where()
+except ImportError:
+    SSL_CA_FILE = None
+
+
+def get_ssl_context() -> ssl.SSLContext:
+    """Create SSL context with proper CA certificates."""
+    ssl_context = ssl.create_default_context()
+    if SSL_CA_FILE:
+        ssl_context.load_verify_locations(SSL_CA_FILE)
+    return ssl_context
 
 # BACKEND_WS_URL = "ws://localhost:8080/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
 
@@ -91,7 +105,7 @@ class AzureOpenAIRealtime(AzureChatCompletion):
         )
 
         try:
-            ssl_context = get_shared_realtime_ssl_context()
+            ssl_context = get_ssl_context()
             async with websockets.connect(  # type: ignore
                 url,
                 additional_headers={

@@ -157,8 +157,34 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": str(db_path),
+        "OPTIONS": {
+            "timeout": 30,  # Wait up to 30 seconds for locks
+            "init_command": (
+                "PRAGMA journal_mode=WAL;"  # Write-Ahead Logging for better concurrency
+                "PRAGMA synchronous=NORMAL;"  # Balance between safety and speed
+                "PRAGMA cache_size=-64000;"  # 64MB cache
+                "PRAGMA busy_timeout=30000;"  # 30 second busy timeout
+                "PRAGMA temp_store=MEMORY;"  # Store temp tables in memory
+            ),
+        },
     }
 }
+
+
+def configure_sqlite_connection(sender, connection, **kwargs):
+    """Configure SQLite connection with performance optimizations."""
+    if connection.vendor == "sqlite":
+        cursor = connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        cursor.execute("PRAGMA synchronous=NORMAL;")
+        cursor.execute("PRAGMA cache_size=-64000;")
+        cursor.execute("PRAGMA busy_timeout=30000;")
+        cursor.execute("PRAGMA temp_store=MEMORY;")
+        cursor.execute("PRAGMA mmap_size=268435456;")  # 256MB memory-mapped I/O
+
+
+from django.db.backends.signals import connection_created
+connection_created.connect(configure_sqlite_connection)
 
 
 # Password validation
