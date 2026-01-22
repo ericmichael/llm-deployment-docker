@@ -25,8 +25,8 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8081:8000"  # Django + WebSocket (host:container)
-      - "4001:4000"  # LiteLLM proxy (host:container)
+      - "18000:8000"  # Django + WebSocket (host:container)
+      - "14000:4000"  # LiteLLM proxy (host:container)
     volumes:
       # Mount source code for live reload
       - .:/usr/src/app

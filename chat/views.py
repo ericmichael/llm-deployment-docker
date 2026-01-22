@@ -220,9 +220,7 @@ async def litellm_proxy_catchall(request, path=""):
 
                             i = 0
                             async for line in response.aiter_lines():
-                                if not line:
-                                    continue
-                                if debug and i == 0:
+                                if debug and i == 0 and line:
                                     logger.debug(
                                         "[LiteLLMProxy][%s] First SSE line: %s",
                                         request_id,
