@@ -23,6 +23,76 @@ from rest_framework.authtoken.models import Token
 logger = logging.getLogger(__name__)
 
 
+def _is_reasoning_model(model: str) -> bool:
+    """
+    Check if a model supports reasoning (o-series or gpt-5+ with reasoning).
+
+    Reasoning models include:
+    - o1, o1-mini, o1-pro, o3, o3-mini, o4-mini (o-series)
+    - gpt-5, gpt-5.1, gpt-5.2, etc. (gpt-5+ series with reasoning capability)
+    """
+    if not model:
+        return False
+
+    model_lower = model.lower()
+
+    # o-series models (o1, o3, o4-mini, etc.)
+    if model_lower.startswith("o1") or model_lower.startswith("o3") or model_lower.startswith("o4"):
+        return True
+
+    # gpt-5+ series models support reasoning
+    if "gpt-5" in model_lower:
+        return True
+
+    return False
+
+
+def _inject_request_defaults(request_data: dict, path: str) -> dict:
+    """
+    Inject default parameters for privacy and reasoning into API requests.
+
+    This ensures:
+    - store=false: Prevents OpenAI from storing request/response data for training
+    - include reasoning.encrypted_content: For reasoning models, includes encrypted
+      reasoning content for multi-turn conversations
+
+    These defaults can be overridden by explicitly setting values in the request.
+    """
+    if not request_data:
+        return request_data
+
+    # Detect endpoint type from path
+    is_chat_completion = "chat/completions" in path
+    is_responses_api = "responses" in path and "chat/completions" not in path
+
+    # Get model from request
+    model = request_data.get("model", "")
+
+    # For chat completions endpoint
+    if is_chat_completion:
+        # Set store=false unless explicitly provided
+        if "store" not in request_data:
+            request_data["store"] = False
+
+    # For responses API endpoint
+    if is_responses_api:
+        # Set store=false unless explicitly provided
+        if "store" not in request_data:
+            request_data["store"] = False
+
+        # Only include reasoning.encrypted_content for reasoning models
+        if _is_reasoning_model(model):
+            include = request_data.get("include", [])
+            if not isinstance(include, list):
+                include = [include] if include else []
+
+            if "reasoning.encrypted_content" not in include:
+                include.append("reasoning.encrypted_content")
+                request_data["include"] = include
+
+    return request_data
+
+
 class CustomLoginView(LoginView):
     authentication_form = CustomUserAuthenticationForm
 
@@ -137,6 +207,9 @@ async def litellm_proxy_catchall(request, path=""):
             if body:
                 request_data = json.loads(body)
                 is_streaming = bool(request_data.get("stream", False))
+
+                # Auto-inject privacy/reasoning defaults for chat completions and responses API
+                request_data = _inject_request_defaults(request_data, path)
         except (json.JSONDecodeError, Exception):
             request_data = {}
             is_streaming = False
