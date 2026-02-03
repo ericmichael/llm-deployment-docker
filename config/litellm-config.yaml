@@ -1,10 +1,12 @@
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-  database_url: null
+  database_url: os.environ/LITELLM_DATABASE_URL
 
 litellm_settings:
   drop_params: true
   telemetry: false
+  num_retries: 3
+  request_timeout: 900
 model_list:
   - model_name: gpt-5
     litellm_params:

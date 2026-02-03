@@ -36,13 +36,11 @@ def health_check(request):
         health_status["checks"]["database"] = f"error: {str(e)}"
         health_status["status"] = "unhealthy"
 
-    # Check LiteLLM connectivity
+    # Check LiteLLM connectivity using the lightweight /health/liveliness endpoint.
+    # LiteLLM is mounted at /litellm/* in the unified ASGI app.
     try:
         import requests
-        from django.conf import settings as django_settings
-        litellm_key = getattr(django_settings, "LITELLM_SERVICE_KEY", None)
-        headers = {"Authorization": f"Bearer {litellm_key}"} if litellm_key else {}
-        resp = requests.get("http://localhost:4000/health", headers=headers, timeout=5)
+        resp = requests.get("http://localhost:8000/litellm/health/liveliness", timeout=5)
         if resp.status_code == 200:
             health_status["checks"]["litellm"] = "ok"
         else:
@@ -52,7 +50,10 @@ def health_check(request):
         health_status["checks"]["litellm"] = f"error: {str(e)}"
         health_status["status"] = "degraded"
 
-    status_code = 200 if health_status["status"] == "healthy" else 503
+    # Return 200 even when degraded so the container orchestrator doesn't restart
+    # the container due to a temporarily slow LiteLLM process. Only return 503
+    # when the Django app itself is unhealthy (e.g. database down).
+    status_code = 200 if health_status["status"] != "unhealthy" else 503
     return JsonResponse(health_status, status=status_code)
 
 

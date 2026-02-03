@@ -11,7 +11,6 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.urls import path, reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
-from rest_framework.authtoken.models import Token
 
 
 User = get_user_model()
@@ -181,7 +180,6 @@ class CourseAdmin(admin.ModelAdmin):
                 if user_created:
                     user.set_password(f'ai_{student_id}')
                     user.save()
-                    Token.objects.get_or_create(user=user)
                     results['created_users'] += 1
 
                 # Check existing enrollment
@@ -235,7 +233,6 @@ class CourseAdmin(admin.ModelAdmin):
                 if user_created:
                     user.set_password(f'ai_{student_id}')
                     user.save()
-                    Token.objects.get_or_create(user=user)
 
                 # Check if already enrolled in this course
                 if Enrollment.objects.filter(course=course, user=user).exists():

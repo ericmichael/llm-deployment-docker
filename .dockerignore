@@ -1,5 +1,9 @@
 db/
 
+# Environment files (secrets injected via Azure App Settings, not baked into image)
+.env
+.env.*
+
 # Version control directories
 .git
 .gitignore

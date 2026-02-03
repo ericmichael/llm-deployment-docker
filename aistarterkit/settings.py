@@ -217,9 +217,17 @@ OPENAI_API_TYPE = os.getenv("OPENAI_API_TYPE", "openai")
 OPENAI_API_VERSION = os.getenv("OPENAI_API_VERSION", "2024-10-21")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-LITELLM_BASE_URL = os.getenv("LITELLM_BASE_URL", "https://api.openai.com/v1")
+LITELLM_BASE_URL = os.getenv("LITELLM_BASE_URL", "http://localhost:8000/litellm")
 LITELLM_SERVICE_KEY = os.getenv("LITELLM_SERVICE_KEY") or OPENAI_API_KEY or "test-litellm-service-key"
+LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY")
 LITELLM_DEFAULT_MODEL = os.getenv("LITELLM_DEFAULT_MODEL", "gpt-5")
+LITELLM_PROXY_BASE_URL = os.getenv("LITELLM_PROXY_BASE_URL")
+LITELLM_ENABLE_VIRTUAL_KEYS = os.getenv("LITELLM_ENABLE_VIRTUAL_KEYS", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 _litellm_model_env = os.getenv("LITELLM_MODEL_LIST")
 if _litellm_model_env:
     _litellm_models = [value.strip() for value in _litellm_model_env.split(",") if value.strip()]

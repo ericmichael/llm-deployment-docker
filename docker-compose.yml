@@ -37,8 +37,6 @@ services:
     environment:
       # PostgreSQL connection (for Django)
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/aistarterkit
-      # Disable LiteLLM's database (it tries to use DATABASE_URL with Prisma)
-      LITELLM_DATABASE_URL: ""
       # Development settings
       ENVIRONMENT: development
       LITELLM_BASE_URL: http://127.0.0.1:4000

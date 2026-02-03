@@ -43,6 +43,20 @@ if [ -n "${DATABASE_URL}" ]; then
 fi
 
 # Run Django migrations
+if [ -n "${DATABASE_URL}" ]; then
+    LITELLM_DB_SCHEMA=${LITELLM_DB_SCHEMA:-litellm}
+    if [ -z "${LITELLM_DATABASE_URL}" ]; then
+        if [[ "${DATABASE_URL}" == *"?"* ]]; then
+            export LITELLM_DATABASE_URL="${DATABASE_URL}&schema=${LITELLM_DB_SCHEMA}"
+        else
+            export LITELLM_DATABASE_URL="${DATABASE_URL}?schema=${LITELLM_DB_SCHEMA}"
+        fi
+    fi
+
+    LITELLM_SCHEMA_PATH=$(python -c "import pathlib, litellm.proxy; print(pathlib.Path(litellm.proxy.__file__).parent / 'schema.prisma')")
+    DATABASE_URL="$LITELLM_DATABASE_URL" prisma db push --skip-generate --schema "$LITELLM_SCHEMA_PATH"
+fi
+
 python manage.py migrate
 
 # Run Django static file collection

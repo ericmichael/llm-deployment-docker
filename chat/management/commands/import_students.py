@@ -19,7 +19,6 @@ import csv
 from django.core.management.base import BaseCommand, CommandError
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from rest_framework.authtoken.models import Token
 
 from chat.models import Course, Enrollment
 
@@ -112,7 +111,6 @@ class Command(BaseCommand):
                         user.set_password(password)
                         user.save()
                         # Create API token
-                        Token.objects.get_or_create(user=user)
                     created_users += 1
                     self.stdout.write(f"  Created user: {email}")
 

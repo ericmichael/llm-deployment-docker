@@ -36,6 +36,9 @@ class CustomUser(AbstractUser):
 
     objects = CustomUserManager()  # Use the custom manager
 
+    litellm_key = models.CharField(max_length=200, blank=True, default="")
+    litellm_key_id = models.CharField(max_length=200, blank=True, default="")
+
     def __str__(self):
         return self.email
 
