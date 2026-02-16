@@ -26,6 +26,11 @@
                     </a>
                 </div>
                 <div class="flex items-center space-x-4">
+                    {% if user.is_staff %}
+                    <a href="{% url 'course_list' %}" class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
+                        <i class="fas fa-graduation-cap mr-1"></i> Courses
+                    </a>
+                    {% endif %}
                     <a href="{% url 'settings' %}" class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
                         <i class="fas fa-cog mr-1"></i> Settings
                     </a>
@@ -41,6 +46,18 @@
     </nav>
 
     <main class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        {% if messages %}
+        <div class="mb-6 space-y-2">
+            {% for message in messages %}
+            <div data-controller="alert" class="rounded-md p-4 {% if message.tags == 'success' %}bg-green-50 text-green-800{% elif message.tags == 'warning' %}bg-yellow-50 text-yellow-800{% elif message.tags == 'error' %}bg-red-50 text-red-800{% else %}bg-blue-50 text-blue-800{% endif %}">
+                <div class="flex justify-between items-center">
+                    <p class="text-sm font-medium">{{ message }}</p>
+                    <button data-action="click->alert#close" class="ml-3 text-sm opacity-50 hover:opacity-100">&times;</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
         {% block content %}{% endblock %}
     </main>
 </body>

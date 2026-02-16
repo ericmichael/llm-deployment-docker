@@ -1,19 +1,12 @@
-import csv
-import io
-
 from .models import CustomUser, Course, Enrollment
-from .forms import CSVImportForm, AddTAForm
+from .forms import CSVImportForm, AddTAForm, AddStudentForm
+from . import services
 from django.contrib import admin
-from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin
-from django.db import transaction
-from django.shortcuts import render, get_object_or_404, redirect
+from django.shortcuts import render, get_object_or_404
 from django.urls import path, reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
-
-
-User = get_user_model()
 
 
 class CustomUserAdmin(UserAdmin):
@@ -67,10 +60,12 @@ class CourseAdmin(admin.ModelAdmin):
     @admin.display(description='Actions')
     def import_link(self, obj):
         import_url = reverse('admin:chat_course_import_csv', args=[obj.pk])
+        add_student_url = reverse('admin:chat_course_add_student', args=[obj.pk])
         add_ta_url = reverse('admin:chat_course_add_ta', args=[obj.pk])
         return format_html(
-            '<a href="{}">Import CSV</a> | <a href="{}">Add TA</a>',
+            '<a href="{}">Import CSV</a> | <a href="{}">Add Student</a> | <a href="{}">Add TA</a>',
             import_url,
+            add_student_url,
             add_ta_url,
         )
 
@@ -93,6 +88,11 @@ class CourseAdmin(admin.ModelAdmin):
                 name='chat_course_import_csv',
             ),
             path(
+                '<int:course_id>/add-student/',
+                self.admin_site.admin_view(self.add_student_view),
+                name='chat_course_add_student',
+            ),
+            path(
                 '<int:course_id>/add-ta/',
                 self.admin_site.admin_view(self.add_ta_view),
                 name='chat_course_add_ta',
@@ -108,12 +108,11 @@ class CourseAdmin(admin.ModelAdmin):
         if request.method == 'POST':
             form = CSVImportForm(request.POST, request.FILES)
             if form.is_valid():
-                results = self._process_csv_import(
+                results = services.process_csv_import(
                     form.cleaned_data['csv_file'],
                     course,
                     form.cleaned_data['role'],
                 )
-                # Reset form after successful import
                 form = CSVImportForm()
         else:
             form = CSVImportForm()
@@ -128,89 +127,37 @@ class CourseAdmin(admin.ModelAdmin):
         }
         return render(request, 'admin/chat/course/import_csv.html', context)
 
-    def _process_csv_import(self, csv_file, course, role):
-        """Process the CSV file and create users/enrollments."""
-        results = {
-            'created_users': 0,
-            'created_enrollments': 0,
-            'moved_enrollments': 0,
-            'skipped': 0,
-            'errors': [],
+    def add_student_view(self, request, course_id):
+        """Handle adding a single student to a course."""
+        course = get_object_or_404(Course, pk=course_id)
+        message = None
+        message_type = None
+
+        if request.method == 'POST':
+            form = AddStudentForm(request.POST)
+            if form.is_valid():
+                result = services.add_student_to_course(
+                    course,
+                    form.cleaned_data['email'],
+                    form.cleaned_data['student_id'],
+                )
+                message = result['message']
+                message_type = result['message_type']
+                if result['success']:
+                    form = AddStudentForm()
+        else:
+            form = AddStudentForm()
+
+        context = {
+            **self.admin_site.each_context(request),
+            'form': form,
+            'course': course,
+            'message': message,
+            'message_type': message_type,
+            'opts': self.model._meta,
+            'title': f'Add Student - {course.code}',
         }
-
-        # Decode and parse CSV
-        try:
-            decoded = csv_file.read().decode('utf-8')
-            reader = csv.DictReader(io.StringIO(decoded))
-            rows = list(reader)
-        except Exception as e:
-            results['errors'].append(f'Error reading CSV: {e}')
-            return results
-
-        if not rows:
-            results['errors'].append('CSV file is empty')
-            return results
-
-        # Validate columns
-        required = {'email', 'student_id'}
-        if not required.issubset(rows[0].keys()):
-            results['errors'].append(
-                f"CSV must have columns: email, student_id. Found: {', '.join(rows[0].keys())}"
-            )
-            return results
-
-        is_student = (role == Enrollment.Role.STUDENT)
-
-        with transaction.atomic():
-            for i, row in enumerate(rows, start=2):  # Start at 2 (header is row 1)
-                email = row.get('email', '').strip().lower()
-                student_id = row.get('student_id', '').strip()
-
-                if not email or not student_id:
-                    results['errors'].append(f'Row {i}: Missing email or student_id')
-                    results['skipped'] += 1
-                    continue
-
-                # Get or create user
-                user, user_created = User.objects.get_or_create(
-                    email=email,
-                    defaults={'is_active': True},
-                )
-
-                if user_created:
-                    user.set_password(f'ai_{student_id}')
-                    user.save()
-                    results['created_users'] += 1
-
-                # Check existing enrollment
-                if is_student:
-                    existing = Enrollment.objects.filter(
-                        user=user, role=Enrollment.Role.STUDENT
-                    ).first()
-                    if existing:
-                        if existing.course == course:
-                            results['skipped'] += 1
-                            continue
-                        else:
-                            # Move student to new course
-                            existing.delete()
-                            results['moved_enrollments'] += 1
-                else:
-                    # TA - check if already in this course
-                    if Enrollment.objects.filter(course=course, user=user).exists():
-                        results['skipped'] += 1
-                        continue
-
-                # Create enrollment
-                Enrollment.objects.create(
-                    course=course,
-                    user=user,
-                    student_id=student_id,
-                    role=role,
-                )
-                results['created_enrollments'] += 1
-
-        return results
+        return render(request, 'admin/chat/course/add_student.html', context)
 
     def add_ta_view(self, request, course_id):
         """Handle adding a single TA to a course."""
@@ -221,36 +168,14 @@ class CourseAdmin(admin.ModelAdmin):
         if request.method == 'POST':
             form = AddTAForm(request.POST)
             if form.is_valid():
-                email = form.cleaned_data['email'].strip().lower()
-                student_id = form.cleaned_data['student_id'].strip()
-
-                # Get or create user
-                user, user_created = User.objects.get_or_create(
-                    email=email,
-                    defaults={'is_active': True},
+                result = services.add_ta_to_course(
+                    course,
+                    form.cleaned_data['email'],
+                    form.cleaned_data['student_id'],
                 )
-
-                if user_created:
-                    user.set_password(f'ai_{student_id}')
-                    user.save()
-
-                # Check if already enrolled in this course
-                if Enrollment.objects.filter(course=course, user=user).exists():
-                    message = f'{email} is already enrolled in this course.'
-                    message_type = 'warning'
-                else:
-                    Enrollment.objects.create(
-                        course=course,
-                        user=user,
-                        student_id=student_id,
-                        role=Enrollment.Role.TA,
-                    )
-                    if user_created:
-                        message = f'Created user and added {email} as TA.'
-                    else:
-                        message = f'Added {email} as TA.'
-                    message_type = 'success'
-                    # Clear form for next entry
+                message = result['message']
+                message_type = result['message_type']
+                if result['success']:
                     form = AddTAForm()
         else:
             form = AddTAForm()
@@ -280,8 +205,7 @@ class EnrollmentAdmin(admin.ModelAdmin):
     def reset_passwords(self, request, queryset):
         count = 0
         for enrollment in queryset:
-            enrollment.user.set_password(f'ai_{enrollment.student_id}')
-            enrollment.user.save()
+            services.reset_enrollment_password(enrollment.pk)
             count += 1
         self.message_user(request, f'Reset passwords for {count} user(s).')
 

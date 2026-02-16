@@ -1,0 +1,37 @@
+{% if enrollments %}
+<table class="min-w-full divide-y divide-gray-200">
+  <thead class="bg-gray-50">
+    <tr>
+      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student ID</th>
+      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Enrolled</th>
+      <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+    </tr>
+  </thead>
+  <tbody class="bg-white divide-y divide-gray-200">
+    {% for enrollment in enrollments %}
+    <tr class="hover:bg-gray-50">
+      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ enrollment.user.email }}</td>
+      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">{{ enrollment.student_id }}</td>
+      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ enrollment.enrolled_at|date:"M d, Y" }}</td>
+      <td class="px-6 py-4 whitespace-nowrap text-right text-sm space-x-3">
+        <form method="post" action="{% url 'enrollment_reset_password' enrollment.pk %}" class="inline">
+          {% csrf_token %}
+          <button type="submit" onclick="return confirm('Reset password for {{ enrollment.user.email }}?')"
+                  class="text-indigo-600 hover:text-indigo-900">Reset Password</button>
+        </form>
+        <form method="post" action="{% url 'enrollment_remove' enrollment.pk %}" class="inline">
+          {% csrf_token %}
+          <button type="submit" onclick="return confirm('Remove {{ enrollment.user.email }} from this course?')"
+                  class="text-red-600 hover:text-red-900">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="px-6 py-8 text-center">
+  <p class="text-sm text-gray-500">No {{ role_label }}s enrolled yet.</p>
+</div>
+{% endif %}

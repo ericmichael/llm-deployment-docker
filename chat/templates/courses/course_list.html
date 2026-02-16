@@ -1,0 +1,103 @@
+{% extends 'base_generic.html' %}
+
+{% block content %}
+<div class="flex flex-col">
+  <!-- Header -->
+  <div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-semibold text-gray-900">Courses</h1>
+    <button onclick="document.getElementById('new-course-form').classList.toggle('hidden')"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
+      <i class="fas fa-plus mr-2"></i> New Course
+    </button>
+  </div>
+
+  <!-- New Course Form (hidden by default) -->
+  <div id="new-course-form" class="hidden mb-6 bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl">
+    <form method="post" action="{% url 'course_create' %}" class="px-4 py-6 sm:p-8">
+      {% csrf_token %}
+      <h2 class="text-lg font-medium text-gray-900 mb-4">Create New Course</h2>
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div>
+          <label for="id_code" class="block text-sm font-medium text-gray-700">{{ form.code.label }}</label>
+          <div class="mt-1">{{ form.code }}</div>
+          {% if form.code.errors %}<p class="mt-1 text-sm text-red-600">{{ form.code.errors.0 }}</p>{% endif %}
+        </div>
+        <div>
+          <label for="id_name" class="block text-sm font-medium text-gray-700">{{ form.name.label }}</label>
+          <div class="mt-1">{{ form.name }}</div>
+          {% if form.name.errors %}<p class="mt-1 text-sm text-red-600">{{ form.name.errors.0 }}</p>{% endif %}
+        </div>
+        <div>
+          <label for="id_semester" class="block text-sm font-medium text-gray-700">{{ form.semester.label }}</label>
+          <div class="mt-1">{{ form.semester }}</div>
+          {% if form.semester.errors %}<p class="mt-1 text-sm text-red-600">{{ form.semester.errors.0 }}</p>{% endif %}
+        </div>
+      </div>
+      <div class="mt-4 flex items-center space-x-3">
+        <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
+          Create Course
+        </button>
+        <button type="button" onclick="document.getElementById('new-course-form').classList.add('hidden')"
+                class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+          Cancel
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Course Table -->
+  <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+    {% if courses %}
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Semester</th>
+          <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Students</th>
+          <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">TAs</th>
+          <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+          <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="bg-white divide-y divide-gray-200">
+        {% for course in courses %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+            <a href="{% url 'course_detail' course.pk %}" class="text-indigo-600 hover:text-indigo-900">{{ course.code }}</a>
+          </td>
+          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ course.name }}</td>
+          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ course.semester }}</td>
+          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">{{ course.student_count }}</td>
+          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">{{ course.ta_count }}</td>
+          <td class="px-6 py-4 whitespace-nowrap text-center">
+            {% if course.is_active %}
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Active</span>
+            {% else %}
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Inactive</span>
+            {% endif %}
+          </td>
+          <td class="px-6 py-4 whitespace-nowrap text-right text-sm space-x-2">
+            <a href="{% url 'course_detail' course.pk %}" class="text-indigo-600 hover:text-indigo-900">View</a>
+            <form method="post" action="{% url 'course_toggle_active' course.pk %}" class="inline">
+              {% csrf_token %}
+              {% if course.is_active %}
+              <button type="submit" class="text-yellow-600 hover:text-yellow-900">Deactivate</button>
+              {% else %}
+              <button type="submit" class="text-green-600 hover:text-green-900">Activate</button>
+              {% endif %}
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="px-6 py-12 text-center">
+      <i class="fas fa-graduation-cap text-4xl text-gray-300 mb-4"></i>
+      <p class="text-sm text-gray-500">No courses yet. Create your first course to get started.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

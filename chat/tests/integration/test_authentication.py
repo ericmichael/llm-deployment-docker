@@ -13,6 +13,6 @@ class UserAuthenticationTestCase(TestCase):
         response = self.client.post(reverse('login'), {'username': 'testuser@test.com', 'password': '12345'})
         self.assertRedirects(response, reverse('settings'))
 
-        # Test logout
-        response = self.client.get(reverse('logout'))
+        # Test logout (Django 5.0+ requires POST for logout)
+        response = self.client.post(reverse('logout'))
         self.assertRedirects(response, reverse('login'))

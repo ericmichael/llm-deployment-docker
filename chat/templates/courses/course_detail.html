@@ -1,0 +1,160 @@
+{% extends 'base_generic.html' %}
+
+{% block content %}
+<div class="flex flex-col">
+  <!-- Breadcrumb -->
+  <nav class="mb-4 text-sm text-gray-500">
+    <a href="{% url 'course_list' %}" class="hover:text-gray-700">Courses</a>
+    <span class="mx-1">/</span>
+    <span class="text-gray-900">{{ course.code }}</span>
+  </nav>
+
+  <!-- Course Header -->
+  <div class="flex justify-between items-start mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-gray-900">{{ course.code }}</h1>
+      <p class="text-gray-600">{{ course.name }} &middot; {{ course.semester }}</p>
+    </div>
+    <div class="flex items-center space-x-3">
+      {% if course.is_active %}
+      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Active</span>
+      {% else %}
+      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Inactive</span>
+      {% endif %}
+      <form method="post" action="{% url 'course_toggle_active' course.pk %}" class="inline">
+        {% csrf_token %}
+        {% if course.is_active %}
+        <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+          Deactivate
+        </button>
+        {% else %}
+        <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700">
+          Activate
+        </button>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div data-controller="tabs" data-tabs-active-tab-class="border-indigo-500 text-indigo-600" data-tabs-inactive-tab-class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+    <div class="border-b border-gray-200">
+      <nav class="-mb-px flex space-x-8">
+        <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent"
+           class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+          Students ({{ students|length }})
+        </a>
+        <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent"
+           class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+          TAs ({{ tas|length }})
+        </a>
+        <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent"
+           class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+          Import CSV
+        </a>
+      </nav>
+    </div>
+
+    <!-- Students Tab -->
+    <div data-tabs-target="panel" class="mt-4">
+      <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+        {% with enrollments=students role_label="student" %}
+        {% include "courses/_enrollment_table.html" %}
+        {% endwith %}
+
+        <div class="px-6 pb-4">
+          {% url 'course_add_student' course.pk as add_student_url %}
+          {% with form=add_student_form action_url=add_student_url button_label="Student" %}
+          {% include "courses/_add_person_form.html" %}
+          {% endwith %}
+        </div>
+      </div>
+    </div>
+
+    <!-- TAs Tab -->
+    <div data-tabs-target="panel" class="mt-4">
+      <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+        {% with enrollments=tas role_label="TA" %}
+        {% include "courses/_enrollment_table.html" %}
+        {% endwith %}
+
+        <div class="px-6 pb-4">
+          {% url 'course_add_ta' course.pk as add_ta_url %}
+          {% with form=add_ta_form action_url=add_ta_url button_label="TA" %}
+          {% include "courses/_add_person_form.html" %}
+          {% endwith %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Import CSV Tab -->
+    <div data-tabs-target="panel" class="mt-4">
+      <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl">
+        <div class="px-4 py-6 sm:p-8">
+          <h3 class="text-lg font-medium text-gray-900 mb-2">Bulk Import</h3>
+          <p class="text-sm text-gray-600 mb-4">
+            Upload a CSV file with <code class="bg-gray-100 px-1 rounded">email</code> and
+            <code class="bg-gray-100 px-1 rounded">student_id</code> columns.
+            Users will be created automatically with password <code class="bg-gray-100 px-1 rounded">ai_&lt;student_id&gt;</code>.
+            Students enrolled in another course will be moved here.
+          </p>
+
+          <form method="post" action="{% url 'course_import_csv' course.pk %}" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3 items-end">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{ csv_form.csv_file.label }}</label>
+                {{ csv_form.csv_file }}
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">{{ csv_form.role.label }}</label>
+                {{ csv_form.role }}
+              </div>
+              <div>
+                <button type="submit"
+                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
+                  <i class="fas fa-upload mr-2"></i> Import
+                </button>
+              </div>
+            </div>
+          </form>
+
+          {% if csv_results %}
+          <div class="mt-6 rounded-md bg-gray-50 p-4">
+            <h4 class="text-sm font-medium text-gray-900 mb-2">Import Results</h4>
+            <dl class="grid grid-cols-2 gap-2 sm:grid-cols-4 text-sm">
+              <div>
+                <dt class="text-gray-500">Users Created</dt>
+                <dd class="font-medium text-gray-900">{{ csv_results.created_users }}</dd>
+              </div>
+              <div>
+                <dt class="text-gray-500">Enrollments Created</dt>
+                <dd class="font-medium text-gray-900">{{ csv_results.created_enrollments }}</dd>
+              </div>
+              <div>
+                <dt class="text-gray-500">Moved</dt>
+                <dd class="font-medium text-gray-900">{{ csv_results.moved_enrollments }}</dd>
+              </div>
+              <div>
+                <dt class="text-gray-500">Skipped</dt>
+                <dd class="font-medium text-gray-900">{{ csv_results.skipped }}</dd>
+              </div>
+            </dl>
+            {% if csv_results.errors %}
+            <div class="mt-3">
+              <p class="text-sm font-medium text-red-700">Errors:</p>
+              <ul class="mt-1 text-sm text-red-600 list-disc list-inside">
+                {% for error in csv_results.errors %}
+                <li>{{ error }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

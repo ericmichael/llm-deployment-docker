@@ -2,104 +2,87 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Build/Test Commands
+## Project Overview
+
+AI Starter Kit — a Django 5.0+ web application for AI Engineering projects. It integrates with LLMs through a LiteLLM proxy and includes student/course management, WebSocket support, and Azure deployment automation.
+
+**Stack**: Django (ASGI/Daphne), LiteLLM proxy, PostgreSQL, Stimulus.js, TailwindCSS, Webpack, Gunicorn+UvicornWorker.
+
+## Build & Run Commands
 
 ```bash
-# Frontend
-npm install && npm run build
+# Local development (Django at :18000, LiteLLM at :14000)
+docker compose up --build
 
-# Django server (requires LiteLLM proxy running)
-LITELLM_BASE_URL=http://127.0.0.1:4000 python manage.py runserver
+# Run tests
+python manage.py test
 
-# LiteLLM proxy (run in separate terminal)
-litellm --config config/litellm-config.yaml --host 0.0.0.0 --port 4000
+# Run specific test modules
+python manage.py test chat.tests.unit
+python manage.py test chat.tests.integration
 
-# Database
-python manage.py migrate
-
-# Tests
-python manage.py test                                              # All tests
-python manage.py test chat.tests.unit                              # Unit tests only
-python manage.py test chat.tests.unit.test_api                     # Specific module
-python manage.py test chat.tests.unit.test_api.TestAPI.test_auth   # Specific test case
-
-# Integration tests (requires running LiteLLM proxy)
+# Run integration tests against live LiteLLM proxy
 LITELLM_BASE_URL=http://127.0.0.1:4000 python manage.py test chat.tests.integration
 
-# Docker (starts Django + PostgreSQL + LiteLLM)
-docker-compose up --build
+# Build JS bundle (Webpack)
+npm run build
 
-# Bulk import users
-python manage.py import_students CSCI-4380-01 students.csv
-python manage.py import_tas CSCI-4380-01 tas.csv
+# Django management
+python manage.py migrate
+python manage.py collectstatic --noinput
+python manage.py import_students COURSE_CODE path/to/csv.csv
 ```
 
-## Architecture Overview
+## Architecture
 
-This is a Django-based AI Starter Kit that provides authenticated access to LLM APIs through a stateless LiteLLM proxy. Designed for educational settings with course-based access control.
+### Unified ASGI Router (`aistarterkit/asgi.py`)
 
-### Request Flow
+A single Gunicorn process serves both Django and LiteLLM via Starlette mounts:
+- `/v1/*` → LiteLLM proxy (OpenAI-compatible API)
+- `/litellm/*` → LiteLLM management API
+- `/v1/realtime`, `/realtime` → LiteLLM WebSocket
+- `/` → Django ASGI application
 
-```
-Client (Bearer token) → Django /chat/api/v1/* → LiteLLM Proxy (port 4000) → Azure OpenAI
-```
+### Database Schema Isolation
 
-1. Client authenticates with DRF Token (`Authorization: Bearer <token>`)
-2. Django validates token and checks active course enrollment
-3. Request proxied to LiteLLM with `LITELLM_SERVICE_KEY`
-4. Response streamed back (supports SSE streaming via `stream: true`)
+Django and LiteLLM share one PostgreSQL database but use separate schemas. LiteLLM tables live in the `litellm` schema (`LITELLM_DB_SCHEMA=litellm`) and use Prisma for migrations. Django uses the default schema.
 
-### Key Components
+### Key Modules
 
-- **`chat/views.py`**: `litellm_proxy_catchall()` - async HTTP proxy to LiteLLM, handles streaming/non-streaming
-- **`chat/consumers.py`**: `RealtimeProxyConsumer` - WebSocket proxy for realtime API (`/ws/v1/realtime`)
-- **`chat/models.py`**: `CustomUser` (email-based auth), `Course`, `Enrollment` (student/TA roles)
-- **`aistarterkit/settings.py`**: Django config, LiteLLM settings, database config
-- **`config/litellm-config.yaml`**: LiteLLM model routing configuration
+- **`aistarterkit/`** — Django project config, settings, ASGI/WSGI entrypoints, URL routing
+- **`chat/`** — Main app: CustomUser (email-based auth, no username), Course, Enrollment models; admin with CSV import/export; LiteLLM virtual key generation per user
+- **`config/litellm-config.yaml`** — LLM model definitions routing to Azure OpenAI
+- **`assets/js/`** — Stimulus controllers, Webpack entry point; bundle.js is generated (not committed)
+- **`patches/`** — Unmerged LiteLLM fixes applied during Docker build
 
-### Authentication & Authorization
+### LiteLLM Virtual Keys
 
-- Email-based user model (`CustomUser` replaces username with email)
-- DRF TokenAuthentication for API access
-- Course enrollment required for API access (superusers bypass)
-- Students limited to one course enrollment; TAs can be in multiple courses
-- Inactive courses deny API access to all enrolled students
+Per-user API keys are generated on first visit to the settings page, stored in `CustomUser.litellm_key` and `litellm_key_id`. Falls back to service key or test key for anonymous requests.
 
-### WebSocket Support
+### Health Check (`/health/`)
 
-- Endpoint: `/ws/v1/realtime?model=gpt-realtime&token=<auth_token>`
-- Uses Django Channels with Daphne ASGI server
-- Bidirectional proxy to LiteLLM realtime endpoint
+Checks database connectivity (`SELECT 1`) and LiteLLM liveliness. Returns 200 for healthy/degraded, 503 for unhealthy. Used by Docker HEALTHCHECK and Azure probes.
 
-## Code Style
+### Container Startup
 
-- **Python**: PEP 8, Django conventions
-- **Import order**: stdlib → third-party → Django → local apps
-- **Type hints**: Required for function parameters and returns
-- **Naming**: snake_case (Python), camelCase (JavaScript)
-- **Tests**: unittest with VCR for API mocking (`chat/tests/unit/vcr_config.py`)
-- **Django**: MTV pattern (Model-Template-View)
+`entrypoint.sh` waits for PostgreSQL, runs Prisma migrations (LiteLLM), Django migrations, and collectstatic. `start.sh` launches Gunicorn with 960s worker timeout and polls `/health/` before tailing logs.
 
-## Key Environment Variables
+## Testing
 
-```bash
-# Required
-LITELLM_SERVICE_KEY=          # Shared auth key for Django↔LiteLLM
-LITELLM_BASE_URL=http://127.0.0.1:4000
-AZURE_OPENAI_ENDPOINT=        # Azure OpenAI resource URL
-AZURE_OPENAI_API_KEY=         # Azure OpenAI key
-
-# Optional
-LITELLM_DEFAULT_MODEL=gpt-5
-LITELLM_MODEL_LIST=gpt-5,gpt-5.1,gpt-4o-mini  # Available models
-DATABASE_URL=postgres://...    # PostgreSQL (defaults to SQLite)
-```
+- **Unit tests** (`chat/tests/unit/`): Use VCR cassettes in `chat/tests/fixtures/` for deterministic API replay (YAML serialization, match on URI/method/path/query/body)
+- **Integration tests** (`chat/tests/integration/`): Django TestCase for auth flows and database transactions
 
 ## Deployment
 
-```bash
-python rocketship.py init    # Create config/deploy.yml template
-python rocketship.py setup   # Deploy to Azure (builds image, pushes secrets)
-```
+- **Local**: Docker Compose with PostgreSQL and hot-reload (`Dockerfile.dev`)
+- **Production**: `Dockerfile` multi-stage build → Azure Container Registry → Azure App Service
+- **CI/CD**: GitHub Actions — PRs run tests (`run-tests.yml`), pushes to main build and push Docker image (`deploy-azure-wappserv.yaml`)
 
-Container runs both Django (Gunicorn/Uvicorn on port 8000) and LiteLLM (port 4000) via `start.sh`.
+## Environment Variables
+
+Key settings are driven by env vars (see `.env` for development defaults):
+- `DATABASE_URL` — PostgreSQL connection string
+- `LITELLM_MASTER_KEY`, `LITELLM_SERVICE_KEY` — LiteLLM authentication
+- `LITELLM_BASE_URL` — Proxy endpoint (default `http://127.0.0.1:4000`)
+- `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` — Azure OpenAI credentials
+- `ENVIRONMENT` — Controls DEBUG mode and security settings
