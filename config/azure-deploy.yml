@@ -13,14 +13,11 @@ azure:
     resource_group: cs-rg-4341-scus
     additional_env:
       DATABASE_URL: ${DATABASE_URL}
-      CHROMADB_STORAGE_PATH: /home/app/db/chromadb/
-      DUCKDB_STORAGE_PATH: /home/app/db/duckdb/
       WEBSITES_CONTAINER_START_TIME_LIMIT: 500
       CUSTOM_HOSTNAME: rgvaiclass.com
       WEBSITES_ENABLE_APP_SERVICE_STORAGE: true
       WEBSITES_PORT: 8000
       ENVIRONMENT: production
-      DJANGO_STATIC_ROOT: /home/app/staticroot/
       CONFIG_FILE_PATH: /usr/src/app/config/litellm-config.yaml
       LITELLM_ENABLE_VIRTUAL_KEYS: true
       LITELLM_DB_SCHEMA: litellm

@@ -1,0 +1,141 @@
+{% extends 'base_generic.html' %}
+
+{% block content %}
+<div class="flex flex-col">
+  <!-- Header with date filter -->
+  <div class="flex flex-col gap-4 mb-6">
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <h1 class="text-2xl font-semibold text-gray-900">Usage Dashboard</h1>
+      <form method="get" class="flex flex-wrap items-center gap-2">
+        <!-- Quick range buttons -->
+        <div class="flex rounded-md shadow-sm">
+          <a href="?range=today{% if selected_course %}&course={{ selected_course.id }}{% endif %}"
+             class="px-3 py-2 text-sm font-medium border {% if range == 'today' %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-700 border-gray-300 hover:bg-gray-50{% endif %} rounded-l-md">
+            Today
+          </a>
+          <a href="?range=week{% if selected_course %}&course={{ selected_course.id }}{% endif %}"
+             class="px-3 py-2 text-sm font-medium border-t border-b {% if range == 'week' %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-700 border-gray-300 hover:bg-gray-50{% endif %}">
+            7 Days
+          </a>
+          <a href="?range=month{% if selected_course %}&course={{ selected_course.id }}{% endif %}"
+             class="px-3 py-2 text-sm font-medium border {% if range == 'month' %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-700 border-gray-300 hover:bg-gray-50{% endif %} rounded-r-md">
+            30 Days
+          </a>
+        </div>
+        <!-- Custom date range -->
+        <input type="hidden" name="range" value="custom">
+        {% if selected_course %}<input type="hidden" name="course" value="{{ selected_course.id }}">{% endif %}
+        <input type="date" name="start" value="{{ start_date|date:'Y-m-d' }}"
+               class="border border-gray-300 rounded-md px-2 py-1.5 text-sm">
+        <span class="text-gray-500 text-sm">to</span>
+        <input type="date" name="end" value="{{ end_date|date:'Y-m-d' }}"
+               class="border border-gray-300 rounded-md px-2 py-1.5 text-sm">
+        <button type="submit"
+                class="px-3 py-2 text-sm font-medium rounded-md bg-indigo-600 text-white hover:bg-indigo-700">
+          Apply
+        </button>
+      </form>
+    </div>
+
+    <!-- Course filter -->
+    {% if courses %}
+    <div class="flex items-center gap-2">
+      <span class="text-sm font-medium text-gray-700">Course:</span>
+      <a href="?range={{ range }}{% if range == 'custom' %}&start={{ start_date|date:'Y-m-d' }}&end={{ end_date|date:'Y-m-d' }}{% endif %}"
+         class="px-3 py-1.5 text-sm font-medium rounded-md border {% if not selected_course %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-700 border-gray-300 hover:bg-gray-50{% endif %}">
+        All
+      </a>
+      {% for course in courses %}
+      <a href="?range={{ range }}&course={{ course.id }}{% if range == 'custom' %}&start={{ start_date|date:'Y-m-d' }}&end={{ end_date|date:'Y-m-d' }}{% endif %}"
+         class="px-3 py-1.5 text-sm font-medium rounded-md border {% if selected_course.id == course.id %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-700 border-gray-300 hover:bg-gray-50{% endif %}">
+        {{ course.code }}
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Error banner -->
+  {% if errors %}
+  <div class="mb-4 rounded-md bg-yellow-50 p-4">
+    <p class="text-sm text-yellow-800">
+      <i class="fas fa-exclamation-triangle mr-1"></i>
+      Some data may be unavailable: {{ errors|join:", " }}
+    </p>
+  </div>
+  {% endif %}
+
+  <!-- Summary cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+    <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-6">
+      <p class="text-sm text-gray-500">Total Spend</p>
+      <p class="text-2xl font-semibold text-gray-900">${{ total_spend|floatformat:4 }}</p>
+    </div>
+    <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-6">
+      <p class="text-sm text-gray-500">Active Users</p>
+      <p class="text-2xl font-semibold text-gray-900">{{ total_users }}</p>
+    </div>
+    <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-6">
+      <p class="text-sm text-gray-500">Models Used</p>
+      <p class="text-2xl font-semibold text-gray-900">{{ by_model|length }}</p>
+    </div>
+  </div>
+
+  <!-- Two-column layout: Models + Users -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Per-Model Table -->
+    <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-200">
+        <h2 class="text-lg font-medium text-gray-900">Spend by Model</h2>
+      </div>
+      {% if by_model %}
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Spend</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+          {% for item in by_model %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ item.model }}</td>
+            <td class="px-6 py-3 text-sm text-gray-500 text-right">${{ item.total_spend|floatformat:4 }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="px-6 py-8 text-center text-sm text-gray-500">No model data for this period.</div>
+      {% endif %}
+    </div>
+
+    <!-- Per-User Table -->
+    <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-200">
+        <h2 class="text-lg font-medium text-gray-900">Spend by User</h2>
+      </div>
+      {% if by_user %}
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
+            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Spend</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+          {% for item in by_user %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ item.email }}</td>
+            <td class="px-6 py-3 text-sm text-gray-500 text-right">${{ item.total_spend|floatformat:4 }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="px-6 py-8 text-center text-sm text-gray-500">No user data for this period.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

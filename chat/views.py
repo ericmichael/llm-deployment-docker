@@ -30,6 +30,7 @@ def _ensure_litellm_virtual_key(user):
 
     payload = {
         "key_alias": getattr(user, "email", "user"),
+        "user_id": getattr(user, "email", "user"),
         "models": [],
         "metadata": {"django_user_id": str(user.id), "email": getattr(user, "email", "")},
     }

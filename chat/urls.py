@@ -2,9 +2,17 @@ from django.urls import path
 
 from . import views
 from . import views_courses
+from . import views_models
+from . import views_usage
 
 urlpatterns = [
     path("settings/", views.developer_settings, name="settings"),
+
+    # Models (all authenticated users)
+    path("models/", views_models.model_list, name="model_list"),
+
+    # Usage dashboard (staff only)
+    path("usage/", views_usage.usage_dashboard, name="usage_dashboard"),
 
     # Course management (staff only)
     path("courses/", views_courses.course_list, name="course_list"),

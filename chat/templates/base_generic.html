@@ -27,10 +27,16 @@
                 </div>
                 <div class="flex items-center space-x-4">
                     {% if user.is_staff %}
+                    <a href="{% url 'usage_dashboard' %}" class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
+                        <i class="fas fa-chart-bar mr-1"></i> Usage
+                    </a>
                     <a href="{% url 'course_list' %}" class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
                         <i class="fas fa-graduation-cap mr-1"></i> Courses
                     </a>
                     {% endif %}
+                    <a href="{% url 'model_list' %}" class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
+                        <i class="fas fa-robot mr-1"></i> Models
+                    </a>
                     <a href="{% url 'settings' %}" class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
                         <i class="fas fa-cog mr-1"></i> Settings
                     </a>

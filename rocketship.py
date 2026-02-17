@@ -139,7 +139,8 @@ def update_app_settings(azure, additional_env):
             )
             if result.returncode != 0:
                 # Fall back to individual settings if JSON fails
-                print("      (JSON method failed, trying individual settings...)")
+                print(f"      (JSON method failed: {result.stderr.strip()})")
+                print("      Trying individual settings...")
                 for k, v in additional_env.items():
                     if v:
                         subprocess.run(
@@ -289,46 +290,89 @@ def restart_app_service(azure):
     subscription = azure["subscription"]
 
     try:
-        with open(os.devnull, "w") as devnull:
-            # Stop the app first
-            subprocess.run(
-                [
-                    "az",
-                    "webapp",
-                    "stop",
-                    "--name",
-                    app_name,
-                    "--resource-group",
-                    resource_group,
-                    "--subscription",
-                    subscription,
-                ],
-                stdout=devnull,
-                stderr=devnull,
-                check=True,
-            )
-            # Then start it again
-            subprocess.run(
-                [
-                    "az",
-                    "webapp",
-                    "start",
-                    "--name",
-                    app_name,
-                    "--resource-group",
-                    resource_group,
-                    "--subscription",
-                    subscription,
-                ],
-                stdout=devnull,
-                stderr=devnull,
-                check=True,
-            )
+        # Stop the app first
+        result = subprocess.run(
+            [
+                "az", "webapp", "stop",
+                "--name", app_name,
+                "--resource-group", resource_group,
+                "--subscription", subscription,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"      ✗ Error stopping app: {result.stderr.strip()}")
+            return False
+
+        # Then start it again
+        result = subprocess.run(
+            [
+                "az", "webapp", "start",
+                "--name", app_name,
+                "--resource-group", resource_group,
+                "--subscription", subscription,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"      ✗ Error starting app: {result.stderr.strip()}")
+            return False
+
         return True
     except subprocess.CalledProcessError as e:
         print("      ✗ Error restarting Azure Web App Service.")
         print(f"        {e}")
         return False
+
+
+def update_container_image(azure, full_image_tag, registry):
+    """Tell Azure App Service to pull a specific image tag.
+
+    This is the key step that forces Azure to actually use the new image,
+    rather than relying on :latest cache invalidation.
+    """
+    app_name = azure["app_service"]["app_name"]
+    resource_group = azure["app_service"]["resource_group"]
+    subscription = azure["subscription"]
+
+    try:
+        result = subprocess.run(
+            [
+                "az", "webapp", "config", "container", "set",
+                "--name", app_name,
+                "--resource-group", resource_group,
+                "--subscription", subscription,
+                "--container-image-name", full_image_tag,
+                "--container-registry-url", f'https://{registry["server"]}',
+                "--container-registry-user", registry["username"],
+                "--container-registry-password", registry["password"],
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"      ✗ Error updating container image: {result.stderr.strip()}")
+            return False
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"      ✗ Error updating container image: {e}")
+        return False
+
+
+def get_git_sha():
+    """Get short git SHA for image tagging."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
 
 
 def get_public_key(token, repo):
@@ -675,10 +719,20 @@ def setup(no_cache=False):
         print(f"Error logging into Docker Container Registry: {e}")
         return
 
+    # Generate image tags
+    git_sha = get_git_sha()
+    image_base = f'{registry["server"]}/{image}'
+    tags = [f"{image_base}:latest"]
+    if git_sha:
+        tags.append(f"{image_base}:{git_sha}")
+        print(f"      Image tag: {git_sha} (git SHA)")
+
     # Build the image
     try:
-        print(f'      Building image: {registry["server"]}/{image}:latest')
-        build_cmd = ["docker", "build", "-t", f'{registry["server"]}/{image}:latest']
+        print(f'      Building image: {image_base}')
+        build_cmd = ["docker", "build"]
+        for tag in tags:
+            build_cmd.extend(["-t", tag])
         if no_cache:
             build_cmd.append("--no-cache")
         build_cmd.append(".")
@@ -688,17 +742,18 @@ def setup(no_cache=False):
         print("Error building Docker image.")
         return
 
-    # Push the image to the registry
+    # Push all tags to the registry
     try:
         print(f'      Pushing to registry...')
-        subprocess.run(
-            ["docker", "push", f'{registry["server"]}/{image}:latest'],
-            check=True
-        )
+        for tag in tags:
+            subprocess.run(["docker", "push", tag], check=True)
         print("      ✓ Image pushed")
     except subprocess.CalledProcessError:
         print("Error pushing Docker image to registry.")
         return
+
+    # The tag Azure will pull — prefer SHA for cache-busting, fall back to latest
+    deploy_tag = f"{image_base}:{git_sha}" if git_sha else f"{image_base}:latest"
 
     # Create and push secrets to Github (optional)
     print(f'\nConfiguring Azure (and GitHub if token provided)...')
@@ -745,6 +800,12 @@ def setup(no_cache=False):
         all_azure_secrets.pop("GITHUB_TOKEN", None)
         if update_app_settings(azure, all_azure_secrets):
             print("      ✓ Azure settings configured")
+
+        print(f"      Updating container image to: {deploy_tag}")
+        if update_container_image(azure, deploy_tag, registry):
+            print("      ✓ Container image updated")
+        else:
+            print("      ✗ Failed to update container image")
 
         print("      Restarting Azure App Service...")
         if restart_app_service(azure):
