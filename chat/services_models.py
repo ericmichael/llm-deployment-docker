@@ -16,9 +16,9 @@ def _get_litellm_client_config():
         base_url = "http://localhost:8000/litellm"
     base_url = base_url.rstrip("/")
 
-    service_key = getattr(settings, "LITELLM_SERVICE_KEY", "")
+    master_key = getattr(settings, "LITELLM_MASTER_KEY", "")
     headers = {
-        "Authorization": f"Bearer {service_key}",
+        "Authorization": f"Bearer {master_key}",
         "Content-Type": "application/json",
     }
     return base_url, headers
