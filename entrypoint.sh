@@ -54,7 +54,7 @@ if [ -n "${DATABASE_URL}" ]; then
     fi
 
     LITELLM_SCHEMA_PATH=$(python -c "import pathlib, litellm.proxy; print(pathlib.Path(litellm.proxy.__file__).parent / 'schema.prisma')")
-    DATABASE_URL="$LITELLM_DATABASE_URL" prisma db push --skip-generate --schema "$LITELLM_SCHEMA_PATH"
+    DATABASE_URL="$LITELLM_DATABASE_URL" prisma db push --skip-generate --accept-data-loss --schema "$LITELLM_SCHEMA_PATH"
 fi
 
 python manage.py migrate
