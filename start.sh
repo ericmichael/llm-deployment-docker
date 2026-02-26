@@ -72,6 +72,10 @@ for i in $(seq 1 30); do
     sleep 1
 done
 
+# Backfill user_id on LiteLLM virtual keys (requires LiteLLM to be running)
+echo "Backfilling LiteLLM virtual key user_ids..."
+python manage.py fix_litellm_keys || echo "WARNING: fix_litellm_keys failed (non-fatal)"
+
 echo ""
 echo "=========================================="
 echo "Services Started Successfully"
