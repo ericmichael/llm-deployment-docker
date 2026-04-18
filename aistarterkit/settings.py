@@ -116,13 +116,23 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "chat.middleware.EasyAuthMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 ROOT_URLCONF = "aistarterkit.urls"
 LOGIN_REDIRECT_URL = "settings"  # Redirect to developer settings after login
-LOGOUT_REDIRECT_URL = "login"  # Assuming 'login' is the name of your login URL pattern
+
+# Azure Easy Auth (Entra ID SSO)
+# Trust X-MS-CLIENT-PRINCIPAL-* headers only when running on Azure App Service.
+# Azure sets WEBSITE_HOSTNAME automatically; it is never present in local dev.
+EASYAUTH_ENABLED = bool(os.getenv("WEBSITE_HOSTNAME"))
+
+if EASYAUTH_ENABLED:
+    LOGOUT_REDIRECT_URL = "/.auth/logout"
+else:
+    LOGOUT_REDIRECT_URL = "login"
 
 TEMPLATES = [
     {

@@ -73,6 +73,8 @@ for i in $(seq 1 30); do
 done
 
 # Backfill user_id on LiteLLM virtual keys (requires LiteLLM to be running)
+# Brief delay to let LiteLLM auth fully initialize after health check passes
+sleep 5
 echo "Backfilling LiteLLM virtual key user_ids..."
 python manage.py fix_litellm_keys || echo "WARNING: fix_litellm_keys failed (non-fatal)"
 

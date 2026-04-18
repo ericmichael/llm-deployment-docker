@@ -73,11 +73,19 @@ class CustomLoginView(LoginView):
 def developer_settings(request):
     """Display API credentials for the authenticated user."""
     error_message = None
-    try:
-        litellm_key = _ensure_litellm_virtual_key(request.user)
-    except Exception as exc:
-        litellm_key = ""
-        error_message = str(exc)
+    litellm_key = ""
+
+    # Staff always get keys; other users need an active enrollment
+    if request.user.is_staff or request.user.has_active_enrollment():
+        try:
+            litellm_key = _ensure_litellm_virtual_key(request.user)
+        except Exception as exc:
+            error_message = str(exc)
+    else:
+        error_message = (
+            "You are not enrolled in any active course. "
+            "Contact your instructor to be added."
+        )
 
     litellm_api_base = request.build_absolute_uri("/v1")
     if not request.is_secure():
