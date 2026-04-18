@@ -7,16 +7,15 @@
 <p>Upload a CSV file to import students or TAs into this course.</p>
 
 <h2>CSV Format</h2>
-<p>The CSV file must have the following columns:</p>
-<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px;">email,student_id
-john.doe@university.edu,12345678
-jane.smith@university.edu,87654321</pre>
+<p>The CSV file must have an <code>email</code> column:</p>
+<pre style="background: #f5f5f5; padding: 10px; border-radius: 4px;">email
+john.doe@university.edu
+jane.smith@university.edu</pre>
 
 <h2>Import Behavior</h2>
 <ul>
     <li><strong>Students:</strong> Can only be enrolled in one course. If already enrolled elsewhere, they will be moved to this course.</li>
     <li><strong>TAs:</strong> Can be enrolled in multiple courses.</li>
-    <li>New users will be created with password <code>ai_&lt;student_id&gt;</code></li>
     <li>Existing users already in this course will be skipped.</li>
 </ul>
 

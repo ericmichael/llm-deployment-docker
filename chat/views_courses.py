@@ -98,7 +98,6 @@ def course_add_student(request, course_id):
         result = services.add_student_to_course(
             course,
             form.cleaned_data["email"],
-            form.cleaned_data["student_id"],
         )
         getattr(messages, result["message_type"])(request, result["message"])
     else:
@@ -116,7 +115,6 @@ def course_add_ta(request, course_id):
         result = services.add_ta_to_course(
             course,
             form.cleaned_data["email"],
-            form.cleaned_data["student_id"],
         )
         getattr(messages, result["message_type"])(request, result["message"])
     else:
@@ -154,13 +152,3 @@ def enrollment_remove(request, enrollment_id):
     return redirect("course_detail", course_id=course_id)
 
 
-@staff_member_required
-@require_POST
-def enrollment_reset_password(request, enrollment_id):
-    """Reset password for an enrolled user."""
-    enrollment = get_object_or_404(Enrollment, pk=enrollment_id)
-    course_id = enrollment.course_id
-    result = services.reset_enrollment_password(enrollment_id)
-    msg_level = "success" if result["success"] else "error"
-    getattr(messages, msg_level)(request, result["message"])
-    return redirect("course_detail", course_id=course_id)

@@ -5,11 +5,11 @@ Usage:
     python manage.py import_tas COURSE_CODE path/to/tas.csv
 
 CSV format:
-    email,student_id
-    ta@university.edu,12345678
+    email
+    ta@university.edu
 
 The command will:
-    - Create user accounts with password ai_<student_id>
+    - Create user accounts (with unusable passwords; SSO handles auth)
     - Enroll TAs in the specified course
     - TAs can be enrolled in multiple courses (unlike students)
     - Skip TAs already enrolled in this specific course
@@ -37,7 +37,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "csv_file",
             type=str,
-            help="Path to CSV file with columns: email,student_id",
+            help="Path to CSV file with column: email",
         )
         parser.add_argument(
             "--dry-run",
@@ -74,10 +74,9 @@ class Command(BaseCommand):
         if not rows:
             raise CommandError("CSV file is empty")
 
-        required_columns = {"email", "student_id"}
-        if not required_columns.issubset(rows[0].keys()):
+        if "email" not in rows[0].keys():
             raise CommandError(
-                f"CSV must have columns: {', '.join(required_columns)}. "
+                f"CSV must have an 'email' column. "
                 f"Found: {', '.join(rows[0].keys())}"
             )
 
@@ -88,9 +87,8 @@ class Command(BaseCommand):
         with transaction.atomic():
             for row in rows:
                 email = row["email"].strip().lower()
-                student_id = row["student_id"].strip()
 
-                if not email or not student_id:
+                if not email:
                     self.stdout.write(
                         self.style.WARNING(f"  Skipping row with missing data: {row}")
                     )
@@ -104,11 +102,9 @@ class Command(BaseCommand):
                 )
 
                 if user_created:
-                    password = f"ai_{student_id}"
                     if not dry_run:
-                        user.set_password(password)
+                        user.set_unusable_password()
                         user.save()
-                        # Create API token
                     created_users += 1
                     self.stdout.write(f"  Created user: {email}")
 
@@ -129,11 +125,10 @@ class Command(BaseCommand):
                     Enrollment.objects.create(
                         course=course,
                         user=user,
-                        student_id=student_id,
                         role=Enrollment.Role.TA,
                     )
                 created_enrollments += 1
-                self.stdout.write(f"  Enrolled TA: {email} (ID: {student_id})")
+                self.stdout.write(f"  Enrolled TA: {email}")
 
             if dry_run:
                 # Rollback all changes in dry run

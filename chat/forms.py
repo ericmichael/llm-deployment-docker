@@ -67,7 +67,7 @@ class CSVImportForm(forms.Form):
 
     csv_file = forms.FileField(
         label="CSV File",
-        help_text="CSV with columns: email, student_id",
+        help_text="CSV with column: email",
         widget=forms.ClearableFileInput(attrs={"class": TAILWIND_FILE, "accept": ".csv"}),
     )
     role = forms.ChoiceField(
@@ -86,12 +86,6 @@ class AddTAForm(forms.Form):
         help_text="TA's email address",
         widget=forms.EmailInput(attrs={"class": TAILWIND_INPUT, "placeholder": "ta@university.edu"}),
     )
-    student_id = forms.CharField(
-        label="Student ID",
-        max_length=50,
-        help_text="Used for password generation (ai_<student_id>)",
-        widget=forms.TextInput(attrs={"class": TAILWIND_INPUT, "placeholder": "123456"}),
-    )
 
 
 class AddStudentForm(forms.Form):
@@ -101,10 +95,4 @@ class AddStudentForm(forms.Form):
         label="Email",
         help_text="Student's email address",
         widget=forms.EmailInput(attrs={"class": TAILWIND_INPUT, "placeholder": "student@university.edu"}),
-    )
-    student_id = forms.CharField(
-        label="Student ID",
-        max_length=50,
-        help_text="Used for password generation (ai_<student_id>)",
-        widget=forms.TextInput(attrs={"class": TAILWIND_INPUT, "placeholder": "123456"}),
     )

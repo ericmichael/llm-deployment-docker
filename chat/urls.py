@@ -23,5 +23,4 @@ urlpatterns = [
     path("courses/<int:course_id>/add-ta/", views_courses.course_add_ta, name="course_add_ta"),
     path("courses/<int:course_id>/import-csv/", views_courses.course_import_csv, name="course_import_csv"),
     path("enrollment/<int:enrollment_id>/remove/", views_courses.enrollment_remove, name="enrollment_remove"),
-    path("enrollment/<int:enrollment_id>/reset-password/", views_courses.enrollment_reset_password, name="enrollment_reset_password"),
 ]

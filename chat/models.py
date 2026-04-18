@@ -80,9 +80,6 @@ class Enrollment(models.Model):
     user = models.ForeignKey(
         CustomUser, on_delete=models.CASCADE, related_name="enrollments"
     )
-    student_id = models.CharField(
-        max_length=50, help_text="University student ID, used for password generation"
-    )
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.STUDENT)
     enrolled_at = models.DateTimeField(auto_now_add=True)
 

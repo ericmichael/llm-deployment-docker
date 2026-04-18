@@ -139,7 +139,6 @@ class CourseAdmin(admin.ModelAdmin):
                 result = services.add_student_to_course(
                     course,
                     form.cleaned_data['email'],
-                    form.cleaned_data['student_id'],
                 )
                 message = result['message']
                 message_type = result['message_type']
@@ -171,7 +170,6 @@ class CourseAdmin(admin.ModelAdmin):
                 result = services.add_ta_to_course(
                     course,
                     form.cleaned_data['email'],
-                    form.cleaned_data['student_id'],
                 )
                 message = result['message']
                 message_type = result['message_type']
@@ -194,20 +192,12 @@ class CourseAdmin(admin.ModelAdmin):
 
 @admin.register(Enrollment)
 class EnrollmentAdmin(admin.ModelAdmin):
-    list_display = ('user', 'course', 'student_id', 'role', 'enrolled_at')
+    list_display = ('user', 'course', 'role', 'enrolled_at')
     list_filter = ('role', 'course', 'course__is_active')
-    search_fields = ('user__email', 'student_id', 'course__code', 'course__name')
+    search_fields = ('user__email', 'course__code', 'course__name')
     ordering = ('course', 'user__email')
     autocomplete_fields = ('user', 'course')
-    actions = ['reset_passwords', 'remove_enrollments']
-
-    @admin.action(description='Reset passwords to ai_<student_id>')
-    def reset_passwords(self, request, queryset):
-        count = 0
-        for enrollment in queryset:
-            services.reset_enrollment_password(enrollment.pk)
-            count += 1
-        self.message_user(request, f'Reset passwords for {count} user(s).')
+    actions = ['remove_enrollments']
 
     @admin.action(description='Remove selected enrollments')
     def remove_enrollments(self, request, queryset):
