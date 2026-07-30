@@ -238,6 +238,15 @@ LITELLM_ENABLE_VIRTUAL_KEYS = os.getenv("LITELLM_ENABLE_VIRTUAL_KEYS", "false").
     "yes",
     "on",
 )
+# Per-student key limits. Every generated key gets these; set a value to 0
+# (or empty) to omit that limit. Apply to existing keys with
+# `manage.py harden_litellm_keys`.
+LITELLM_KEY_MAX_BUDGET = float(os.getenv("LITELLM_KEY_MAX_BUDGET", "10"))  # USD
+LITELLM_KEY_BUDGET_DURATION = os.getenv("LITELLM_KEY_BUDGET_DURATION", "30d")  # budget resets
+LITELLM_KEY_RPM_LIMIT = int(os.getenv("LITELLM_KEY_RPM_LIMIT", "60"))
+LITELLM_KEY_TPM_LIMIT = int(os.getenv("LITELLM_KEY_TPM_LIMIT", "200000"))
+LITELLM_KEY_DURATION = os.getenv("LITELLM_KEY_DURATION", "180d")  # key expiry (~semester)
+
 _litellm_model_env = os.getenv("LITELLM_MODEL_LIST")
 if _litellm_model_env:
     _litellm_models = [value.strip() for value in _litellm_model_env.split(",") if value.strip()]

@@ -1,7 +1,6 @@
 import logging
 
-import httpx
-
+from . import litellm_keys
 from .forms import CustomUserAuthenticationForm
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
@@ -19,48 +18,11 @@ def _ensure_litellm_virtual_key(user):
     if getattr(user, "litellm_key", ""):
         return user.litellm_key
 
-    master_key = getattr(settings, "LITELLM_MASTER_KEY", None)
-    if not master_key:
-        raise RuntimeError("LITELLM_MASTER_KEY not set")
-
-    base_url = getattr(settings, "LITELLM_PROXY_BASE_URL", None)
-    if not base_url:
-        base_url = "http://localhost:8000/litellm"
-    base_url = base_url.rstrip("/")
-
-    payload = {
-        "key_alias": getattr(user, "email", "user"),
-        "user_id": getattr(user, "email", "user"),
-        "models": [],
-        "metadata": {"django_user_id": str(user.id), "email": getattr(user, "email", "")},
-    }
-
-    auth_headers = {"Authorization": f"Bearer {master_key}", "Content-Type": "application/json"}
-
-    with httpx.Client(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
-        resp = client.post(f"{base_url}/key/generate", headers=auth_headers, json=payload)
-
-        # If alias already exists, delete the old key and retry
-        if resp.status_code == 400 and "already exists" in resp.text:
-            client.post(
-                f"{base_url}/key/delete",
-                headers=auth_headers,
-                json={"key_aliases": [payload["key_alias"]]},
-            )
-            resp = client.post(f"{base_url}/key/generate", headers=auth_headers, json=payload)
-
-    if resp.status_code >= 400:
-        raise RuntimeError(f"LiteLLM key generation failed: {resp.status_code} {resp.text[:512]}")
-
-    data = resp.json()
-    key = data.get("key") or data.get("token")
-    key_id = data.get("key_id") or data.get("token_id") or data.get("id")
-    if not key:
-        raise RuntimeError("LiteLLM did not return a key")
+    key, key_id = litellm_keys.generate_key(user)
 
     user.litellm_key = key
     if key_id:
-        user.litellm_key_id = str(key_id)
+        user.litellm_key_id = key_id
     user.save(update_fields=["litellm_key", "litellm_key_id"])
     return key
 

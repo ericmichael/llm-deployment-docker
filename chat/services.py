@@ -189,11 +189,23 @@ def process_csv_import(csv_file, course, role):
 
 
 def remove_enrollment(enrollment_id):
-    """Delete an enrollment by ID. Returns success/message dict."""
+    """Delete an enrollment by ID. Returns success/message dict.
+
+    If the user is left with no active enrollment, their LiteLLM virtual
+    key is revoked so access ends with the enrollment.
+    """
+    from . import litellm_keys
+
     try:
         enrollment = Enrollment.objects.get(pk=enrollment_id)
-        email = enrollment.user.email
+        user = enrollment.user
+        email = user.email
         enrollment.delete()
-        return {"success": True, "message": f"Removed {email} from course."}
+
+        message = f"Removed {email} from course."
+        if not litellm_keys.user_keeps_key(user):
+            if litellm_keys.revoke_key(user):
+                message += " Their API key was revoked."
+        return {"success": True, "message": message}
     except Enrollment.DoesNotExist:
         return {"success": False, "message": "Enrollment not found."}
