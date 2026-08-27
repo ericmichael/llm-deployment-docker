@@ -42,10 +42,12 @@ def health_check(request):
         health_status["status"] = "unhealthy"
 
     # Check LiteLLM connectivity using the lightweight /health/liveliness endpoint.
-    # LiteLLM is mounted at /litellm/* in the unified ASGI app.
+    # LiteLLM is mounted at /litellm/* in the unified ASGI app (same host/port).
     try:
         import httpx
-        resp = httpx.get("http://localhost:8000/litellm/health/liveliness", timeout=5)
+        from django.conf import settings as dj_settings
+        proxy = (getattr(dj_settings, "LITELLM_PROXY_BASE_URL", None) or "http://localhost:8000/litellm").rstrip("/")
+        resp = httpx.get(f"{proxy}/health/liveliness", timeout=5)
         if resp.status_code == 200:
             health_status["checks"]["litellm"] = "ok"
         else:

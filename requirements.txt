@@ -19,3 +19,8 @@ daphne>=4.0.0
 websockets>=12.0
 certifi>=2023.0.0
 asgiref>=3.7.0
+
+# Test-only (chat/tests/e2e runs the real proxy in-process and records Azure traffic)
+vcrpy>=8.0
+uvicorn>=0.30
+websockets>=13

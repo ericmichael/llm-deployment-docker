@@ -159,6 +159,8 @@ TEMPLATES = [
     },
 ]
 
+TEST_RUNNER = "chat.tests.runner.StackAwareRunner"
+
 WSGI_APPLICATION = "aistarterkit.wsgi.application"
 ASGI_APPLICATION = "aistarterkit.asgi.application"
 

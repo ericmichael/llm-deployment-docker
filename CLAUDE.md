@@ -74,8 +74,9 @@ Checks database connectivity (`SELECT 1`) and LiteLLM liveliness. Returns 200 fo
 
 ## Testing
 
-- **Unit tests** (`chat/tests/unit/`): service/key-lifecycle tests; LiteLLM HTTP calls are mocked (`chat.litellm_keys.generate_key`, `revoke_key`, `key_info`)
+- **Unit tests** (`chat/tests/unit/`): service/key-lifecycle branching; LiteLLM HTTP calls are mocked at the `chat.litellm_keys` boundary
 - **Integration tests** (`chat/tests/integration/`): Django TestCase for auth, Easy Auth middleware, course views, health check
+- **End-to-end tests** (`chat/tests/e2e/`, `python manage.py test chat.tests.e2e`): boots the real unified ASGI app (Django + embedded LiteLLM) on a uvicorn thread against the Django test DB (`harness.py` pushes LiteLLM's Prisma schema into it) and exercises key/team/budget/allowlist/spend flows over HTTP. Nothing LiteLLM-side is mocked. LiteLLM→Azure HTTP is recorded by VCR into `chat/tests/fixtures/cassettes/` (host + credentials scrubbed; replayed on later runs; delete a cassette to re-record, which needs `AZURE_OPENAI_*` in `.env`). The realtime WebSocket test can't be recorded and runs live when `AZURE_OPENAI_API_KEY` is set. Needs `prisma generate` once in the venv (`prisma generate --schema $(python -c "import pathlib,litellm.proxy;print(pathlib.Path(litellm.proxy.__file__).parent/'schema.prisma')")`). `TEST_RUNNER` is `chat.tests.runner.StackAwareRunner`, which stops the stack before the test DB is dropped.
 
 ## Deployment
 
