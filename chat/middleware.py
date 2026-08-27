@@ -45,5 +45,9 @@ class EasyAuthMiddleware:
             user.save()
             logger.info("Created new user via Easy Auth: %s", email)
 
+        # login() does not check is_active; a deactivated account must stay out.
+        if not user.is_active:
+            return self.get_response(request)
+
         login(request, user, backend="django.contrib.auth.backends.ModelBackend")
         return self.get_response(request)

@@ -36,12 +36,38 @@
             </div>
           </div>
 
+          {% if litellm_api_key %}
+          <div class="rounded-md bg-gray-50 p-4">
+            <p class="text-sm text-gray-700">
+              <span class="font-medium">Spending limit:</span>
+              {% if budget %}${{ budget|floatformat:2 }} per {% if budget_duration == "1mo" %}calendar month{% else %}{{ budget_duration|default:"period" }}{% endif %}{% else %}unlimited{% endif %}
+              {% if usage %}
+                &middot; <span class="font-medium">Used:</span> ${{ usage.spend|floatformat:2 }}
+                {% if usage.max_budget %}({% widthratio usage.spend usage.max_budget 100 %}%){% endif %}
+                {% if usage.budget_reset_at %}&middot; resets {{ usage.budget_reset_at|date:"M d" }}{% endif %}
+              {% endif %}
+            </p>
+          </div>
+          {% endif %}
+
           <div>
             <label for="litellm_api_key" class="block text-sm font-medium leading-6 text-gray-900">API Key</label>
             <div class="mt-2">
               <input id="litellm_api_key" readonly value="{{ litellm_api_key }}" name="litellm_api_key" type="text"
                 class="px-3 block w-full rounded-md border-0 py-1.5 text-gray-900 bg-gray-50 shadow-sm ring-1 ring-inset ring-gray-300 font-mono sm:text-sm sm:leading-6">
             </div>
+            {% if litellm_api_key %}
+            <div class="mt-2 flex items-center justify-between">
+              <p class="text-xs text-gray-500">
+                Models: {% if allowed_models %}{{ allowed_models|join:", " }}{% else %}all{% endif %}
+              </p>
+              <form method="post" action="{% url 'regenerate_key' %}">
+                {% csrf_token %}
+                <button type="submit" onclick="return confirm('Regenerate your API key? The current key stops working immediately. Use this if your key was exposed (e.g. committed to a repo).')"
+                        class="text-xs font-medium text-indigo-600 hover:text-indigo-800"><i class="fas fa-sync-alt mr-1"></i>Regenerate key</button>
+              </form>
+            </div>
+            {% endif %}
           </div>
         </div>
       </div>

@@ -16,7 +16,7 @@
     <form method="post" action="{% url 'course_create' %}" class="px-4 py-6 sm:p-8">
       {% csrf_token %}
       <h2 class="text-lg font-medium text-gray-900 mb-4">Create New Course</h2>
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <div>
           <label for="id_code" class="block text-sm font-medium text-gray-700">{{ form.code.label }}</label>
           <div class="mt-1">{{ form.code }}</div>
@@ -31,6 +31,12 @@
           <label for="id_semester" class="block text-sm font-medium text-gray-700">{{ form.semester.label }}</label>
           <div class="mt-1">{{ form.semester }}</div>
           {% if form.semester.errors %}<p class="mt-1 text-sm text-red-600">{{ form.semester.errors.0 }}</p>{% endif %}
+        </div>
+        <div>
+          <label for="id_monthly_budget" class="block text-sm font-medium text-gray-700">{{ form.monthly_budget.label }}</label>
+          <div class="mt-1">{{ form.monthly_budget }}</div>
+          <p class="mt-1 text-xs text-gray-500">Blank = global default</p>
+          {% if form.monthly_budget.errors %}<p class="mt-1 text-sm text-red-600">{{ form.monthly_budget.errors.0 }}</p>{% endif %}
         </div>
       </div>
       <div class="mt-4 flex items-center space-x-3">

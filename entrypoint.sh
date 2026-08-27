@@ -54,7 +54,14 @@ if [ -n "${DATABASE_URL}" ]; then
     fi
 
     LITELLM_SCHEMA_PATH=$(python -c "import pathlib, litellm.proxy; print(pathlib.Path(litellm.proxy.__file__).parent / 'schema.prisma')")
-    DATABASE_URL="$LITELLM_DATABASE_URL" prisma db push --skip-generate --accept-data-loss --schema "$LITELLM_SCHEMA_PATH"
+    # Without --accept-data-loss a schema change that would drop data fails the
+    # boot instead of silently destroying key/spend tables. Set
+    # LITELLM_PRISMA_ACCEPT_DATA_LOSS=true to opt in for a specific upgrade.
+    PRISMA_PUSH_ARGS="--skip-generate"
+    if [ "${LITELLM_PRISMA_ACCEPT_DATA_LOSS:-false}" = "true" ]; then
+        PRISMA_PUSH_ARGS="$PRISMA_PUSH_ARGS --accept-data-loss"
+    fi
+    DATABASE_URL="$LITELLM_DATABASE_URL" prisma db push $PRISMA_PUSH_ARGS --schema "$LITELLM_SCHEMA_PATH"
 fi
 
 python manage.py migrate

@@ -14,6 +14,8 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+import logging
+
 from django.contrib import admin
 from django.urls import include, path
 from django.contrib.auth import views as auth_views
@@ -21,6 +23,8 @@ from django.views.generic import RedirectView
 from django.http import JsonResponse
 from django.db import connection
 from chat.views import CustomLoginView
+
+logger = logging.getLogger(__name__)
 
 
 def health_check(request):
@@ -32,22 +36,24 @@ def health_check(request):
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
         health_status["checks"]["database"] = "ok"
-    except Exception as e:
-        health_status["checks"]["database"] = f"error: {str(e)}"
+    except Exception:
+        logger.exception("Health check: database unreachable")
+        health_status["checks"]["database"] = "error"
         health_status["status"] = "unhealthy"
 
     # Check LiteLLM connectivity using the lightweight /health/liveliness endpoint.
     # LiteLLM is mounted at /litellm/* in the unified ASGI app.
     try:
-        import requests
-        resp = requests.get("http://localhost:8000/litellm/health/liveliness", timeout=5)
+        import httpx
+        resp = httpx.get("http://localhost:8000/litellm/health/liveliness", timeout=5)
         if resp.status_code == 200:
             health_status["checks"]["litellm"] = "ok"
         else:
             health_status["checks"]["litellm"] = f"error: status {resp.status_code}"
             health_status["status"] = "degraded"
-    except Exception as e:
-        health_status["checks"]["litellm"] = f"error: {str(e)}"
+    except Exception:
+        logger.exception("Health check: LiteLLM unreachable")
+        health_status["checks"]["litellm"] = "error: unreachable"
         health_status["status"] = "degraded"
 
     # Return 200 even when degraded so the container orchestrator doesn't restart

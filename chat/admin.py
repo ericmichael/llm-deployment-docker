@@ -12,11 +12,12 @@ from django.utils.translation import gettext_lazy as _
 class CustomUserAdmin(UserAdmin):
     # Define a custom UserAdmin
     model = CustomUser
-    list_display = ('email', 'is_staff', 'is_active',)
+    list_display = ('email', 'is_staff', 'is_active', 'monthly_budget')
+    readonly_fields = ('litellm_key_expires',)
     list_filter = ('email', 'is_staff', 'is_active',)
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
-        (_('Personal info'), {'fields': ()}),  # Add any additional fields here
+        (_('API access'), {'fields': ('monthly_budget', 'litellm_key_expires')}),
         (_('Permissions'), {
             'fields': ('is_staff', 'is_active', 'is_superuser', 'groups', 'user_permissions'),
         }),
@@ -42,7 +43,8 @@ class EnrollmentInline(admin.TabularInline):
 
 @admin.register(Course)
 class CourseAdmin(admin.ModelAdmin):
-    list_display = ('code', 'name', 'semester', 'is_active', 'student_count', 'ta_count', 'import_link', 'created_at')
+    readonly_fields = ('litellm_team_id',)
+    list_display = ('code', 'name', 'semester', 'is_active', 'monthly_budget', 'total_budget', 'student_count', 'ta_count', 'import_link', 'created_at')
     list_filter = ('is_active', 'semester')
     search_fields = ('code', 'name', 'semester')
     ordering = ('-created_at',)
@@ -71,13 +73,13 @@ class CourseAdmin(admin.ModelAdmin):
 
     @admin.action(description='Activate selected courses')
     def activate_courses(self, request, queryset):
-        updated = queryset.update(is_active=True)
+        updated = services.set_courses_active(queryset, True)
         self.message_user(request, f'{updated} course(s) activated.')
 
     @admin.action(description='Deactivate selected courses')
     def deactivate_courses(self, request, queryset):
-        updated = queryset.update(is_active=False)
-        self.message_user(request, f'{updated} course(s) deactivated.')
+        updated = services.set_courses_active(queryset, False)
+        self.message_user(request, f'{updated} course(s) deactivated. Keys of students left without an active course were revoked.')
 
     def get_urls(self):
         urls = super().get_urls()
@@ -202,7 +204,7 @@ class EnrollmentAdmin(admin.ModelAdmin):
     @admin.action(description='Remove selected enrollments')
     def remove_enrollments(self, request, queryset):
         count = queryset.count()
-        queryset.delete()
+        queryset.delete()  # per-object post_delete signal handles key revocation
         self.message_user(request, f'Removed {count} enrollment(s).')
 
 

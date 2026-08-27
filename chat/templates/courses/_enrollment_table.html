@@ -4,6 +4,7 @@
     <tr>
       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Enrolled</th>
+      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Monthly budget</th>
       <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
     </tr>
   </thead>
@@ -12,10 +13,29 @@
     <tr class="hover:bg-gray-50">
       <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ enrollment.user.email }}</td>
       <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ enrollment.enrolled_at|date:"M d, Y" }}</td>
+      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        <form method="post" action="{% url 'enrollment_set_budget' enrollment.pk %}" class="flex items-center gap-2">
+          {% csrf_token %}
+          <input type="number" name="monthly_budget" step="0.01" min="0" placeholder="inherit"
+                 value="{% if enrollment.user.monthly_budget is not None %}{{ enrollment.user.monthly_budget }}{% endif %}"
+                 class="w-24 rounded-md border-0 py-1 px-2 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm">
+          <button type="submit" class="text-indigo-600 hover:text-indigo-900 text-xs">Set</button>
+          <span class="text-xs text-gray-400">
+            {% if enrollment.effective_budget %}${{ enrollment.effective_budget|floatformat:2 }}{% else %}unlimited{% endif %} ({{ enrollment.budget_source }})
+          </span>
+        </form>
+      </td>
       <td class="px-6 py-4 whitespace-nowrap text-right text-sm space-x-3">
+        {% if enrollment.user.litellm_key %}
+        <form method="post" action="{% url 'enrollment_reset_usage' enrollment.pk %}" class="inline">
+          {% csrf_token %}
+          <button type="submit" onclick="return confirm('Reset this month\'s usage for {{ enrollment.user.email|escapejs }}? Their spend counter goes back to $0.')"
+                  class="text-indigo-600 hover:text-indigo-900">Reset usage</button>
+        </form>
+        {% endif %}
         <form method="post" action="{% url 'enrollment_remove' enrollment.pk %}" class="inline">
           {% csrf_token %}
-          <button type="submit" onclick="return confirm('Remove {{ enrollment.user.email }} from this course?')"
+          <button type="submit" onclick="return confirm('Remove {{ enrollment.user.email|escapejs }} from this course?')"
                   class="text-red-600 hover:text-red-900">Remove</button>
         </form>
       </td>

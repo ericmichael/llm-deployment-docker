@@ -86,4 +86,26 @@ def get_model_info():
 
     except Exception as exc:
         logger.exception("Failed to fetch model info")
-        return {"success": False, "models": [], "message": f"Could not fetch model info: {exc}"}
+        return {"success": False, "models": [], "message": "Could not fetch model info from the proxy. Please try again later."}
+
+
+def model_names(extra=()):
+    """
+    Names of models the proxy exposes, for allowlist pickers. Falls back to
+    the names in config/litellm-config.yaml if the proxy is unreachable, and
+    always includes `extra` (already-selected values) so they stay selectable.
+    """
+    names = []
+    result = get_model_info()
+    if result["success"]:
+        names = [m["name"] for m in result["models"]]
+    if not names:
+        try:
+            import yaml
+            from django.conf import settings as dj_settings
+            path = dj_settings.BASE_DIR / "config" / "litellm-config.yaml"
+            with open(path) as fh:
+                names = [m["model_name"] for m in (yaml.safe_load(fh) or {}).get("model_list", [])]
+        except Exception:
+            logger.warning("Could not read model names from config", exc_info=True)
+    return sorted(set(names) | set(extra or ()))

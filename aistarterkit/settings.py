@@ -86,6 +86,8 @@ if ENV in ("development", "test"):
     )
 else:
     DEBUG = False
+    # Azure's front door terminates TLS and forwards X-Forwarded-Proto.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     ALLOWED_HOSTS = ["*"]
     ALLOWED_HOSTS.extend(
         host for host in trusted_hostnames if host not in ALLOWED_HOSTS
@@ -127,7 +129,14 @@ LOGIN_REDIRECT_URL = "settings"  # Redirect to developer settings after login
 # Azure Easy Auth (Entra ID SSO)
 # Trust X-MS-CLIENT-PRINCIPAL-* headers only when running on Azure App Service.
 # Azure sets WEBSITE_HOSTNAME automatically; it is never present in local dev.
-EASYAUTH_ENABLED = bool(os.getenv("WEBSITE_HOSTNAME"))
+# EASYAUTH_ENABLED=false overrides this (e.g. an App Service without
+# Authentication turned on - there the headers are client-controlled and
+# trusting them would let anyone log in as any email).
+_easyauth_env = os.getenv("EASYAUTH_ENABLED")
+if _easyauth_env is not None:
+    EASYAUTH_ENABLED = _easyauth_env.strip().lower() in ("1", "true", "yes", "on")
+else:
+    EASYAUTH_ENABLED = bool(os.getenv("WEBSITE_HOSTNAME"))
 
 if EASYAUTH_ENABLED:
     LOGOUT_REDIRECT_URL = "/.auth/logout"
@@ -227,7 +236,6 @@ OPENAI_API_TYPE = os.getenv("OPENAI_API_TYPE", "openai")
 OPENAI_API_VERSION = os.getenv("OPENAI_API_VERSION", "2024-10-21")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-LITELLM_BASE_URL = os.getenv("LITELLM_BASE_URL", "http://localhost:8000/litellm")
 LITELLM_SERVICE_KEY = os.getenv("LITELLM_SERVICE_KEY") or OPENAI_API_KEY or "test-litellm-service-key"
 LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY")
 LITELLM_DEFAULT_MODEL = os.getenv("LITELLM_DEFAULT_MODEL", "gpt-5")
@@ -239,13 +247,27 @@ LITELLM_ENABLE_VIRTUAL_KEYS = os.getenv("LITELLM_ENABLE_VIRTUAL_KEYS", "false").
     "on",
 )
 # Per-student key limits. Every generated key gets these; set a value to 0
-# (or empty) to omit that limit. Apply to existing keys with
-# `manage.py harden_litellm_keys`.
-LITELLM_KEY_MAX_BUDGET = float(os.getenv("LITELLM_KEY_MAX_BUDGET", "10"))  # USD
-LITELLM_KEY_BUDGET_DURATION = os.getenv("LITELLM_KEY_BUDGET_DURATION", "30d")  # budget resets
-LITELLM_KEY_RPM_LIMIT = int(os.getenv("LITELLM_KEY_RPM_LIMIT", "60"))
-LITELLM_KEY_TPM_LIMIT = int(os.getenv("LITELLM_KEY_TPM_LIMIT", "200000"))
+# (or empty) to omit that limit. Existing keys are re-synced at every boot by
+# `manage.py sync_litellm_keys`.
+def _env_number(name, default, cast):
+    raw = os.getenv(name)
+    if raw is None:
+        return cast(default)
+    raw = raw.strip()
+    return cast(raw) if raw else cast(0)
+
+
+LITELLM_KEY_MAX_BUDGET = _env_number("LITELLM_KEY_MAX_BUDGET", "10", float)  # USD
+# "1mo" = calendar month: LiteLLM resets every key's spend on the 1st at midnight
+# in litellm_settings.timezone (config/litellm-config.yaml). "30d" = rolling.
+LITELLM_KEY_BUDGET_DURATION = os.getenv("LITELLM_KEY_BUDGET_DURATION", "1mo")
+LITELLM_KEY_RPM_LIMIT = _env_number("LITELLM_KEY_RPM_LIMIT", "60", int)
+LITELLM_KEY_TPM_LIMIT = _env_number("LITELLM_KEY_TPM_LIMIT", "200000", int)
 LITELLM_KEY_DURATION = os.getenv("LITELLM_KEY_DURATION", "180d")  # key expiry (~semester)
+# Models a key may call when its course sets no allowlist. Empty = all proxy models.
+LITELLM_KEY_DEFAULT_MODELS = [
+    m.strip() for m in os.getenv("LITELLM_KEY_DEFAULT_MODELS", "").split(",") if m.strip()
+]
 
 _litellm_model_env = os.getenv("LITELLM_MODEL_LIST")
 if _litellm_model_env:

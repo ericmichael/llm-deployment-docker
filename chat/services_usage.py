@@ -38,96 +38,113 @@ def parse_date_range(range_key, custom_start=None, custom_end=None):
         return today - timedelta(days=30), today
 
 
-def get_spend_logs(start_date, end_date):
+def get_daily_activity(start_date, end_date):
     """
-    Fetch daily spend logs from LiteLLM.
-    Returns {"success": bool, "logs": list[dict], "message": str}
+    Fetch per-day spend from LiteLLM's aggregated daily table
+    (/user/daily/activity, admin/global view). Pages through all results.
 
-    Each log entry is a daily summary with:
-      - startTime: date string
-      - spend: total spend for the day
-      - users: {user_id: spend} dict
-      - models: {model_name: spend} dict
+    Returns {"success": bool, "days": list[dict], "message": str}. Each day dict:
+      {"date": "YYYY-MM-DD", "spend": float, "requests": int, "tokens": int,
+       "users": {user_id: {"spend", "requests", "tokens"}},
+       "models": {model: {"spend", "requests", "tokens"}}}
     """
     base_url, headers = _get_litellm_client_config()
+    days = []
     try:
         with httpx.Client(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
-            resp = client.get(
-                f"{base_url}/spend/logs",
-                headers=headers,
-                params={
-                    "start_date": str(start_date),
-                    "end_date": str(end_date + timedelta(days=1)),
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        logs = data if isinstance(data, list) else data.get("logs", data.get("data", []))
-        return {"success": True, "logs": logs, "message": ""}
-    except Exception as exc:
-        logger.exception("Failed to fetch spend logs")
-        return {"success": False, "logs": [], "message": f"Could not fetch spend logs: {exc}"}
+            page = 1
+            while True:
+                resp = client.get(
+                    f"{base_url}/user/daily/activity",
+                    headers=headers,
+                    params={
+                        "start_date": str(start_date),
+                        "end_date": str(end_date),
+                        "page": page,
+                        "page_size": 1000,
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                for row in data.get("results", []):
+                    days.append(_normalize_day(row))
+                meta = data.get("metadata", {}) or {}
+                if not meta.get("has_more") and page >= int(meta.get("total_pages") or 1):
+                    break
+                page += 1
+                if page > 100:  # safety valve
+                    logger.warning("Daily activity pagination exceeded 100 pages; truncating")
+                    break
+        return {"success": True, "days": days, "message": ""}
+    except Exception:
+        logger.exception("Failed to fetch daily activity")
+        return {"success": False, "days": [], "message": "Could not fetch usage from the proxy. Please try again later."}
 
 
-def aggregate_from_logs(logs, filter_emails=None):
+def _metrics(block):
+    m = (block or {}).get("metrics", block) or {}
+    return {
+        "spend": float(m.get("spend") or 0),
+        "requests": int(m.get("api_requests") or 0),
+        "tokens": int(m.get("total_tokens") or 0),
+    }
+
+
+def _normalize_day(row):
+    breakdown = row.get("breakdown", {}) or {}
+    users = {}
+    # `entities` is keyed by user_id on the user daily table; fall back to key alias (= email).
+    for user_id, block in (breakdown.get("entities") or {}).items():
+        users[user_id or ""] = _metrics(block)
+    if not users:
+        for _, block in (breakdown.get("api_keys") or {}).items():
+            alias = ((block or {}).get("metadata") or {}).get("key_alias") or ""
+            cur = users.setdefault(alias, {"spend": 0.0, "requests": 0, "tokens": 0})
+            for k, v in _metrics(block).items():
+                cur[k] += v
+    models = {name: _metrics(block) for name, block in (breakdown.get("models") or {}).items()}
+    top = _metrics(row)
+    return {"date": str(row.get("date")), **top, "users": users, "models": models}
+
+
+def aggregate_from_days(days, filter_emails=None):
     """
-    Aggregate daily spend log summaries into by-user and by-model breakdowns.
-
-    Args:
-        logs: List of daily summary dicts from LiteLLM /spend/logs
-        filter_emails: Optional set/list of emails to filter users by (for course filtering).
-                       When set, only matching users are included and total_spend is
-                       computed from their spend only.
-
-    Returns dict with:
-        total_spend, by_user (list), by_model (list)
+    Aggregate normalized day dicts into totals and by-user / by-model lists.
+    filter_emails restricts users (course filter); model breakdown is only
+    available for the unfiltered view (the daily table isn't per-user-per-model).
     """
     email_set = set(filter_emails) if filter_emails is not None else None
+    by_user, by_model = {}, {}
+    total = {"spend": Decimal("0"), "requests": 0, "tokens": 0}
 
-    by_user = {}
-    by_model = {}
-    total_spend = Decimal("0")
-
-    for log in logs:
-        # Aggregate users
-        users = log.get("users") or {}
-        for user_id, spend in users.items():
+    for day in days:
+        for user_id, m in day["users"].items():
             if email_set is not None and user_id not in email_set:
                 continue
-            spend_d = Decimal(str(spend or 0))
-            if user_id not in by_user:
-                by_user[user_id] = {
-                    "email": user_id or "unknown",
-                    "total_spend": Decimal("0"),
-                }
-            by_user[user_id]["total_spend"] += spend_d
-            total_spend += spend_d
-
-        # Aggregate models (only if no filter, or if we're including some users from this day)
+            row = by_user.setdefault(user_id, {"email": user_id or "unknown", "total_spend": Decimal("0"), "requests": 0, "tokens": 0})
+            row["total_spend"] += Decimal(str(m["spend"]))
+            row["requests"] += m["requests"]
+            row["tokens"] += m["tokens"]
+            if email_set is not None:
+                total["spend"] += Decimal(str(m["spend"]))
+                total["requests"] += m["requests"]
+                total["tokens"] += m["tokens"]
         if email_set is None:
-            models = log.get("models") or {}
-            for model_name, spend in models.items():
-                spend_d = Decimal(str(spend or 0))
-                if model_name not in by_model:
-                    by_model[model_name] = {
-                        "model": _friendly_model_name(model_name),
-                        "total_spend": Decimal("0"),
-                    }
-                by_model[model_name]["total_spend"] += spend_d
-
-    # When filtering by course, we can't break down by model from the daily summaries
-    # (the API doesn't give per-user-per-model data), so we skip model breakdown
-
-    if email_set is None:
-        total_spend = sum((m["total_spend"] for m in by_model.values()), Decimal("0"))
-
-    by_user_list = sorted(by_user.values(), key=lambda x: x["total_spend"], reverse=True)
-    by_model_list = sorted(by_model.values(), key=lambda x: x["total_spend"], reverse=True)
+            for model_name, m in day["models"].items():
+                row = by_model.setdefault(model_name, {"model": _friendly_model_name(model_name), "total_spend": Decimal("0"), "requests": 0, "tokens": 0})
+                row["total_spend"] += Decimal(str(m["spend"]))
+                row["requests"] += m["requests"]
+                row["tokens"] += m["tokens"]
+            total["spend"] += Decimal(str(day["spend"]))
+            total["requests"] += day["requests"]
+            total["tokens"] += day["tokens"]
 
     return {
-        "total_spend": total_spend,
-        "by_user": by_user_list,
-        "by_model": by_model_list,
+        "total_spend": total["spend"],
+        "total_requests": total["requests"],
+        "total_tokens": total["tokens"],
+        "by_user": sorted(by_user.values(), key=lambda x: x["total_spend"], reverse=True),
+        "by_model": sorted(by_model.values(), key=lambda x: x["total_spend"], reverse=True),
     }
 
 

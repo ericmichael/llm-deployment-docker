@@ -1,5 +1,5 @@
-# Use image with both Python 3.10 and Node.js 18 pre-installed
-FROM nikolaik/python-nodejs:python3.10-nodejs18-slim
+# Use image with both Python 3.12 and Node.js 20 pre-installed (LiteLLM needs Python >= 3.11)
+FROM nikolaik/python-nodejs:python3.12-nodejs20-slim
 
 # Set environment variables
 ENV APP_HOME=/usr/src/app
@@ -30,8 +30,12 @@ RUN mkdir -p /var/lib/litellm/ui /var/lib/litellm/assets && chown -R pn:pn /var/
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
-RUN prisma generate --schema $(python -c "import pathlib, litellm.proxy; print(pathlib.Path(litellm.proxy.__file__).parent / 'schema.prisma')") \
-    && chmod a+rx /root /root/.cache && chmod -R a+rX /root/.cache/prisma-python
+# Prisma resolves its engine cache from $HOME; build as root but cache to a
+# shared path so the runtime user (pn) doesn't re-download engines at boot.
+ENV PRISMA_BINARY_CACHE_DIR=/var/lib/prisma-cache
+RUN mkdir -p $PRISMA_BINARY_CACHE_DIR \
+    && prisma generate --schema $(python -c "import pathlib, litellm.proxy; print(pathlib.Path(litellm.proxy.__file__).parent / 'schema.prisma')") \
+    && chown -R pn:pn $PRISMA_BINARY_CACHE_DIR
 
 # === USER OPERATIONS ===
 USER pn
@@ -48,7 +52,6 @@ RUN npm run build
 
 # Make ports available to the world outside this container
 EXPOSE 8000
-EXPOSE 4000
 
 # Health check for container orchestration
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \

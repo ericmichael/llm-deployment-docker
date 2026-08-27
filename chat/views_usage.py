@@ -2,11 +2,17 @@
 
 from datetime import datetime
 
+from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
-from django.shortcuts import render
+from django.shortcuts import redirect, render
+from django.views.decorators.http import require_POST
 
-from . import services_usage
+from django.contrib.auth import get_user_model
+
+from . import litellm_keys, services_usage
 from .models import Course, Enrollment
+
+User = get_user_model()
 
 
 @staff_member_required
@@ -42,14 +48,27 @@ def usage_dashboard(request):
 
     errors = []
 
-    logs_result = services_usage.get_spend_logs(start_date, end_date)
-    if not logs_result["success"]:
-        errors.append(logs_result["message"])
+    activity = services_usage.get_daily_activity(start_date, end_date)
+    if not activity["success"]:
+        errors.append(activity["message"])
 
-    agg = services_usage.aggregate_from_logs(logs_result["logs"], filter_emails=filter_emails)
+    agg = services_usage.aggregate_from_days(activity["days"], filter_emails=filter_emails)
+
+    # Attach each user's effective budget so staff can see who is near their cap
+    users_by_email = {
+        u.email: u for u in User.objects.filter(email__in=[row["email"] for row in agg["by_user"]])
+    }
+    for row in agg["by_user"]:
+        user = users_by_email.get(row["email"])
+        row["budget"] = litellm_keys.effective_budget(user) if user else None
+        row["budget_pct"] = (
+            float(row["total_spend"]) / row["budget"] * 100 if row["budget"] else None
+        )
 
     return render(request, "usage/dashboard.html", {
         "total_spend": agg["total_spend"],
+        "total_requests": agg["total_requests"],
+        "total_tokens": agg["total_tokens"],
         "total_users": len(agg["by_user"]),
         "by_user": agg["by_user"],
         "by_model": agg["by_model"],
@@ -60,3 +79,16 @@ def usage_dashboard(request):
         "courses": courses,
         "selected_course": selected_course,
     })
+
+
+@staff_member_required
+@require_POST
+def usage_reset_all(request):
+    """Zero the spend counter on every virtual key (global reset)."""
+    users = User.objects.exclude(litellm_key="")
+    result = litellm_keys.reset_spend_for_users(users)
+    if result["failed"]:
+        messages.warning(request, f"Reset {result['reset']} keys; failed for: {', '.join(result['failed'])}.")
+    else:
+        messages.success(request, f"Reset usage on {result['reset']} keys.")
+    return redirect("usage_dashboard")

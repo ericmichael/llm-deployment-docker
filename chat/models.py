@@ -9,7 +9,7 @@ class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         if not email:
             raise ValueError("The Email field must be set")
-        email = self.normalize_email(email)
+        email = self.normalize_email(email).strip().lower()
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
@@ -38,9 +38,21 @@ class CustomUser(AbstractUser):
 
     litellm_key = models.CharField(max_length=200, blank=True, default="")
     litellm_key_id = models.CharField(max_length=200, blank=True, default="")
+    litellm_key_expires = models.DateTimeField(null=True, blank=True)
+    monthly_budget = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True,
+        help_text="USD per 30 days. Overrides the course and global budgets. 0 = unlimited.",
+    )
 
     def __str__(self):
         return self.email
+
+    def save(self, *args, **kwargs):
+        # Emails are compared case-insensitively everywhere (CSV import, SSO
+        # headers, LiteLLM user_id) so store them lowercased to avoid duplicates.
+        if self.email:
+            self.email = self.email.strip().lower()
+        super().save(*args, **kwargs)
 
     def has_active_enrollment(self):
         """Check if user has an enrollment in any active course."""
@@ -58,6 +70,19 @@ class Course(models.Model):
     is_active = models.BooleanField(
         default=True, help_text="Inactive courses deny API access to enrolled students"
     )
+    monthly_budget = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True,
+        help_text="USD per 30 days for students in this course. Blank = global default. 0 = unlimited.",
+    )
+    total_budget = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="USD per month for the whole course (all members combined). Blank = no course-wide cap.",
+    )
+    allowed_models = models.JSONField(
+        default=list, blank=True,
+        help_text="Model names members may call. Empty = every model the proxy exposes.",
+    )
+    litellm_team_id = models.CharField(max_length=200, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

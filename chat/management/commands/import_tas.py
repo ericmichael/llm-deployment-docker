@@ -14,11 +14,12 @@ The command will:
     - TAs can be enrolled in multiple courses (unlike students)
     - Skip TAs already enrolled in this specific course
 """
-import csv
 from django.core.management.base import BaseCommand, CommandError
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.db import transaction
 
+from chat import services
 from chat.models import Course, Enrollment
 
 
@@ -62,23 +63,17 @@ class Command(BaseCommand):
 
         # Read CSV file
         try:
-            with open(csv_file, "r", newline="", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                rows = list(reader)
+            with open(csv_file, "rb") as f:
+                rows = services.read_csv_rows(f.read())
         except FileNotFoundError:
             raise CommandError(f"CSV file not found: {csv_file}")
+        except ValueError as e:
+            raise CommandError(str(e))
         except Exception as e:
             raise CommandError(f"Error reading CSV file: {e}")
 
-        # Validate CSV has required columns
         if not rows:
-            raise CommandError("CSV file is empty")
-
-        if "email" not in rows[0].keys():
-            raise CommandError(
-                f"CSV must have an 'email' column. "
-                f"Found: {', '.join(rows[0].keys())}"
-            )
+            raise CommandError("CSV file has no data rows")
 
         created_users = 0
         created_enrollments = 0
@@ -86,11 +81,11 @@ class Command(BaseCommand):
 
         with transaction.atomic():
             for row in rows:
-                email = row["email"].strip().lower()
-
-                if not email:
+                try:
+                    email = services.normalize_email(row.get("email", ""))
+                except ValidationError as exc:
                     self.stdout.write(
-                        self.style.WARNING(f"  Skipping row with missing data: {row}")
+                        self.style.WARNING(f"  Skipping row ({exc.messages[0]}): {row}")
                     )
                     skipped += 1
                     continue

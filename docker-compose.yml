@@ -26,7 +26,6 @@ services:
         condition: service_healthy
     ports:
       - "18000:8000"  # Django + WebSocket (host:container)
-      - "14000:4000"  # LiteLLM proxy (host:container)
     volumes:
       # Mount source code for live reload
       - .:/usr/src/app
@@ -39,8 +38,6 @@ services:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/aistarterkit
       # Development settings
       ENVIRONMENT: development
-      LITELLM_BASE_URL: http://127.0.0.1:4000
-      LITELLM_MASTER_KEY: ${LITELLM_SERVICE_KEY}
     stdin_open: true
     tty: true
 

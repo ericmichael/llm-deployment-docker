@@ -3,6 +3,9 @@ general_settings:
   database_url: os.environ/LITELLM_DATABASE_URL
 
 litellm_settings:
+  # Timezone for budget resets: with budget_duration "1mo" every key's spend
+  # resets on the 1st of the month at midnight in this zone.
+  timezone: America/Chicago
   drop_params: true
   telemetry: false
   num_retries: 3
@@ -57,3 +60,7 @@ model_list:
       api_version: os.environ/OPENAI_API_VERSION
       api_key: os.environ/AZURE_OPENAI_API_KEY
       realtime_protocol: "GA"
+    model_info:
+      # "azure/gpt-realtime" has no entry in LiteLLM's price map, so without
+      # this spend logs as $0 and bypasses student budgets.
+      base_model: azure/gpt-realtime-2025-08-28

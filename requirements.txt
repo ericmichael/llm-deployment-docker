@@ -1,6 +1,7 @@
 openai>=2.8.0
 httpx>=0.27.0
-litellm[proxy]>=1.81.3
+pyyaml>=6.0
+litellm[proxy]==1.98.0
 prisma==0.11.0
 nodejs-wheel-binaries==24.12.0
 psycopg2-binary>=2.9.9
@@ -8,7 +9,6 @@ dj-database-url>=2.1.0
 urllib3==2.2.2; python_version >= "3.10"
 urllib3<2; python_version < "3.10"
 python-dotenv==1.0.0
-vcrpy==5.1.0
 gunicorn==23.0.0
 uvicorn[standard]>=0.30.0
 django>=5.0,<6.0

@@ -1,10 +1,10 @@
 import { Application } from "stimulus"
-import { definitionsFromContext } from "stimulus/webpack-helpers"
 import Prism from 'prismjs';
 
 const application = Application.start();
-const context = require.context("./controllers", true, /\.js$/)
-application.load(definitionsFromContext(context))
+// No app-specific controllers currently; the Tailwind components below are
+// registered explicitly. (A require.context on a missing ./controllers dir
+// breaks `npm run build` on fresh checkouts.)
 
 // Import and register all TailwindCSS Components or just the ones you need
 import { Alert, Autosave, ColorPreview, Dropdown, Modal, Tabs, Popover, Toggle, Slideover } from "tailwindcss-stimulus-components"

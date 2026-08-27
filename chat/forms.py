@@ -54,12 +54,25 @@ class CourseForm(forms.ModelForm):
 
     class Meta:
         model = Course
-        fields = ["code", "name", "semester", "is_active"]
+        fields = ["code", "name", "semester", "monthly_budget"]  # is_active is toggled separately
         widgets = {
             "code": forms.TextInput(attrs={"class": TAILWIND_INPUT, "placeholder": "CSCI-4380-01"}),
             "name": forms.TextInput(attrs={"class": TAILWIND_INPUT, "placeholder": "AI Engineering Fall 2026"}),
             "semester": forms.TextInput(attrs={"class": TAILWIND_INPUT, "placeholder": "Fall 2026"}),
+            "monthly_budget": forms.NumberInput(
+                attrs={"class": TAILWIND_INPUT, "placeholder": "default", "step": "0.01", "min": "0"}
+            ),
         }
+        labels = {"monthly_budget": "Monthly budget (USD)"}
+
+
+class BudgetForm(forms.Form):
+    """Set or clear a monthly budget override (empty = inherit)."""
+
+    monthly_budget = forms.DecimalField(
+        required=False, min_value=0, max_digits=8, decimal_places=2,
+        widget=forms.NumberInput(attrs={"class": TAILWIND_INPUT, "step": "0.01", "min": "0", "placeholder": "inherit"}),
+    )
 
 
 class CSVImportForm(forms.Form):
@@ -96,3 +109,19 @@ class AddStudentForm(forms.Form):
         help_text="Student's email address",
         widget=forms.EmailInput(attrs={"class": TAILWIND_INPUT, "placeholder": "student@university.edu"}),
     )
+
+
+class CourseAccessForm(forms.Form):
+    """Course-wide cap and model allowlist (drives the LiteLLM team)."""
+
+    total_budget = forms.DecimalField(
+        required=False, min_value=0, max_digits=10, decimal_places=2,
+        widget=forms.NumberInput(attrs={"class": TAILWIND_INPUT, "step": "0.01", "min": "0", "placeholder": "no cap"}),
+    )
+    allowed_models = forms.MultipleChoiceField(
+        required=False, choices=(), widget=forms.CheckboxSelectMultiple
+    )
+
+    def __init__(self, *args, model_choices=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["allowed_models"].choices = [(m, m) for m in model_choices]
