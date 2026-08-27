@@ -1,4 +1,5 @@
 const path = require('path');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
 module.exports = {
   entry: './assets/js/application.js',
@@ -6,6 +7,11 @@ module.exports = {
     filename: 'bundle.js',
     path: path.resolve(__dirname, 'assets/js'),
   },
+  plugins: [
+    // Emit compiled CSS (Tailwind + Prism theme) as a real stylesheet so pages
+    // don't flash unstyled while the JS bundle loads.
+    new MiniCssExtractPlugin({ filename: '../css/app.css' }),
+  ],
   module: {
     rules: [
       {
@@ -18,10 +24,9 @@ module.exports = {
           }
         }
       },
-      // Add this rule for CSS files
       {
         test: /\.css$/,
-        use: ['style-loader', 'css-loader']
+        use: [MiniCssExtractPlugin.loader, 'css-loader', 'postcss-loader']
       }
     ]
   }

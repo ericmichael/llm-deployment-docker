@@ -1,3 +1,4 @@
+import "../css/tailwind.css"
 import { Application } from "stimulus"
 import Prism from 'prismjs';
 

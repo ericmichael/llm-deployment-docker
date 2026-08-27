@@ -51,7 +51,7 @@ USER pn
 
 # Build the JS bundle once so a fresh clone serves pages with JS; the
 # bind-mounted source can rebuild with `npm run build` for changes.
-COPY --chown=pn:pn webpack.config.js .babelrc* ./
+COPY --chown=pn:pn webpack.config.js tailwind.config.js postcss.config.js .babelrc* ./
 COPY --chown=pn:pn assets ./assets
 RUN npm run build
 

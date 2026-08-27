@@ -54,7 +54,7 @@ Django and LiteLLM share one PostgreSQL database but use separate schemas. LiteL
 - **`aistarterkit/`** — Django project config, settings, ASGI/WSGI entrypoints, URL routing
 - **`chat/`** — Main app: CustomUser (email-based auth, no username), Course, Enrollment models; admin with CSV import/export; LiteLLM virtual key generation per user
 - **`config/litellm-config.yaml`** — LLM model definitions routing to Azure OpenAI
-- **`assets/js/`** — Webpack entry point + Stimulus controllers (`clipboard`, `reveal`, plus `tailwindcss-stimulus-components`: alert, tabs, toggle); bundle.js is generated (not committed). Styling is Tailwind v3 via the Play CDN script in `base_generic.html` (templates use v3 syntax such as `ring-gray-900/5`)
+- **`assets/js/`** — Webpack entry point + Stimulus controllers (`clipboard`, `reveal`, plus `tailwindcss-stimulus-components`: alert, tabs, toggle); bundle.js is generated (not committed). Styling is Tailwind v3 compiled by webpack (`tailwind.config.js` scans templates/JS/forms; `assets/css/tailwind.css` → `assets/css/app.css`, generated, not committed). Run `npm run build` after adding new Tailwind classes
 
 ### LiteLLM Virtual Keys
 
