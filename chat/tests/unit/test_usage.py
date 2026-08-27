@@ -49,3 +49,9 @@ class DailyActivityAggregationTests(SimpleTestCase):
         self.assertEqual(norm["spend"], 2.0)
         row["breakdown"]["entities"] = {"z@x.edu": {"metrics": {"spend": 2.0, "api_requests": 4, "total_tokens": 40}}}
         self.assertEqual(list(services_usage._normalize_day(row)["users"]), ["z@x.edu"])
+
+    def test_models_merge_across_provider_prefix(self):
+        days = [day("2026-08-01", {"a@x.edu": 1.0}, {"azure/gpt-4o-mini": 1.0, "gpt-4o-mini": 0.0}, 1.0)]
+        agg = services_usage.aggregate_from_days(days)
+        self.assertEqual([m["model"] for m in agg["by_model"]], ["gpt-4o-mini"])
+        self.assertEqual(agg["by_model"][0]["requests"], 2)

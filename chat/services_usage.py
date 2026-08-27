@@ -131,7 +131,8 @@ def aggregate_from_days(days, filter_emails=None):
                 total["tokens"] += m["tokens"]
         if email_set is None:
             for model_name, m in day["models"].items():
-                row = by_model.setdefault(model_name, {"model": _friendly_model_name(model_name), "total_spend": Decimal("0"), "requests": 0, "tokens": 0})
+                friendly = _friendly_model_name(model_name)
+                row = by_model.setdefault(friendly, {"model": friendly, "total_spend": Decimal("0"), "requests": 0, "tokens": 0})
                 row["total_spend"] += Decimal(str(m["spend"]))
                 row["requests"] += m["requests"]
                 row["tokens"] += m["tokens"]
