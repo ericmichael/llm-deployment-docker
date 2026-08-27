@@ -1,65 +1,80 @@
 <!-- chat/templates/base_generic.html -->
 {% load static %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full bg-gray-50">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="turbo-cache-control" content="no-preview">
-    <title>API Portal</title>
-    <!-- Include Tailwind CSS from CDN -->
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <title>{% block title %}API Portal{% endblock %}</title>
+    <!-- Tailwind v3 (the templates use v3 syntax such as ring-gray-900/5) -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
     <script src="{% static 'js/bundle.js' %}"></script>
 </head>
 
-<body class="bg-gray-100">
-    <!-- Top Navigation Bar -->
-    <nav class="bg-white shadow-sm border-b border-gray-200">
+<body class="h-full bg-gray-50 text-gray-900 antialiased">
+    {% with current=request.resolver_match.url_name %}
+    <nav class="bg-white border-b border-gray-200" data-controller="toggle">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between h-16">
-                <div class="flex items-center">
-                    <a href="{% url 'settings' %}" class="text-xl font-semibold text-gray-900">
+            <div class="flex h-16 items-center justify-between">
+                <div class="flex items-center gap-8">
+                    <a href="{% url 'settings' %}" class="flex items-center gap-2 text-lg font-semibold text-gray-900">
+                        <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white"><i class="fas fa-key text-sm"></i></span>
                         API Portal
                     </a>
-                </div>
-                <div class="flex items-center space-x-4">
-                    {% if user.is_staff %}
-                    <a href="{% url 'usage_dashboard' %}" class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
-                        <i class="fas fa-chart-bar mr-1"></i> Usage
-                    </a>
-                    <a href="{% url 'course_list' %}" class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
-                        <i class="fas fa-graduation-cap mr-1"></i> Courses
-                    </a>
+                    {% if user.is_authenticated %}
+                    <div class="hidden md:flex items-center gap-1">
+                        {% include "_nav_link.html" with name="settings" label="My API key" icon="fa-key" current=current %}
+                        {% include "_nav_link.html" with name="model_list" label="Models" icon="fa-robot" current=current %}
+                        {% if user.is_staff %}
+                        {% include "_nav_link.html" with name="course_list" label="Courses" icon="fa-graduation-cap" current=current %}
+                        {% include "_nav_link.html" with name="usage_dashboard" label="Usage" icon="fa-chart-bar" current=current %}
+                        {% endif %}
+                    </div>
                     {% endif %}
-                    <a href="{% url 'model_list' %}" class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
-                        <i class="fas fa-robot mr-1"></i> Models
-                    </a>
-                    <a href="{% url 'settings' %}" class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
-                        <i class="fas fa-cog mr-1"></i> Settings
-                    </a>
-                    <form method="post" action="{% url 'logout' %}" class="inline">
+                </div>
+                {% if user.is_authenticated %}
+                <div class="hidden md:flex items-center gap-4">
+                    <span class="text-sm text-gray-500">{{ user.email }}{% if user.is_staff %} <span class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">staff</span>{% endif %}</span>
+                    {% if user.is_staff %}<a href="{% url 'admin:index' %}" class="text-sm text-gray-500 hover:text-gray-900">Admin</a>{% endif %}
+                    <form method="post" action="{% url 'logout' %}">
                         {% csrf_token %}
-                        <button type="submit" class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium">
-                            <i class="fas fa-sign-out-alt mr-1"></i> Logout
-                        </button>
+                        <button type="submit" class="text-sm font-medium text-gray-600 hover:text-gray-900">Sign out</button>
                     </form>
                 </div>
+                <button type="button" data-action="toggle#toggle" class="md:hidden inline-flex items-center justify-center rounded-md p-2 text-gray-500 hover:bg-gray-100" aria-label="Open menu">
+                    <i class="fas fa-bars"></i>
+                </button>
+                {% endif %}
             </div>
         </div>
+        {% if user.is_authenticated %}
+        <div data-toggle-target="toggleable" class="hidden md:hidden border-t border-gray-200 px-4 pb-4 pt-2 space-y-1">
+            {% include "_nav_link.html" with name="settings" label="My API key" icon="fa-key" current=current block=True %}
+            {% include "_nav_link.html" with name="model_list" label="Models" icon="fa-robot" current=current block=True %}
+            {% if user.is_staff %}
+            {% include "_nav_link.html" with name="course_list" label="Courses" icon="fa-graduation-cap" current=current block=True %}
+            {% include "_nav_link.html" with name="usage_dashboard" label="Usage" icon="fa-chart-bar" current=current block=True %}
+            {% endif %}
+            <div class="flex items-center justify-between pt-3 mt-2 border-t border-gray-100">
+                <span class="text-sm text-gray-500 truncate">{{ user.email }}</span>
+                <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit" class="text-sm font-medium text-gray-600">Sign out</button></form>
+            </div>
+        </div>
+        {% endif %}
     </nav>
+    {% endwith %}
 
-    <main class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+    <main class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
         {% if messages %}
         <div class="mb-6 space-y-2">
             {% for message in messages %}
-            <div data-controller="alert" class="rounded-md p-4 {% if message.tags == 'success' %}bg-green-50 text-green-800{% elif message.tags == 'warning' %}bg-yellow-50 text-yellow-800{% elif message.tags == 'error' %}bg-red-50 text-red-800{% else %}bg-blue-50 text-blue-800{% endif %}">
-                <div class="flex justify-between items-center">
-                    <p class="text-sm font-medium">{{ message }}</p>
-                    <button data-action="click->alert#close" class="ml-3 text-sm opacity-50 hover:opacity-100">&times;</button>
-                </div>
+            <div data-controller="alert" class="flex items-start justify-between rounded-lg border p-4 text-sm {% if message.tags == 'success' %}border-green-200 bg-green-50 text-green-800{% elif message.tags == 'warning' %}border-yellow-200 bg-yellow-50 text-yellow-800{% elif message.tags == 'error' %}border-red-200 bg-red-50 text-red-800{% else %}border-blue-200 bg-blue-50 text-blue-800{% endif %}">
+                <p class="font-medium"><i class="fas {% if message.tags == 'success' %}fa-check-circle{% elif message.tags == 'warning' %}fa-exclamation-triangle{% elif message.tags == 'error' %}fa-times-circle{% else %}fa-info-circle{% endif %} mr-2"></i>{{ message }}</p>
+                <button data-action="click->alert#close" class="ml-4 opacity-50 hover:opacity-100" aria-label="Dismiss">&times;</button>
             </div>
             {% endfor %}
         </div>

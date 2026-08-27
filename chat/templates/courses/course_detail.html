@@ -1,201 +1,130 @@
 {% extends 'base_generic.html' %}
+{% block title %}{{ course.code }} · API Portal{% endblock %}
 
 {% block content %}
-<div class="flex flex-col">
-  <!-- Breadcrumb -->
-  <nav class="mb-4 text-sm text-gray-500">
-    <a href="{% url 'course_list' %}" class="hover:text-gray-700">Courses</a>
-    <span class="mx-1">/</span>
-    <span class="text-gray-900">{{ course.code }}</span>
-  </nav>
+<nav class="mb-4 text-sm text-gray-500"><a href="{% url 'course_list' %}" class="hover:text-gray-700">Courses</a><span class="mx-1">/</span><span class="text-gray-900">{{ course.code }}</span></nav>
 
-  <!-- Course Header -->
-  <div class="flex justify-between items-start mb-6">
-    <div>
-      <h1 class="text-2xl font-semibold text-gray-900">{{ course.code }}</h1>
-      <p class="text-gray-600">{{ course.name }} &middot; {{ course.semester }}</p>
-    </div>
-    <div class="flex items-center space-x-3">
-      {% if course.is_active %}
-      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Active</span>
-      {% else %}
-      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Inactive</span>
-      {% endif %}
-      <form method="post" action="{% url 'course_toggle_active' course.pk %}" class="inline">
-        {% csrf_token %}
-        {% if course.is_active %}
-        <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-          Deactivate
-        </button>
-        {% else %}
-        <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700">
-          Activate
-        </button>
-        {% endif %}
-      </form>
-    </div>
+<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+  <div>
+    <h1 class="flex items-center gap-3 text-2xl font-semibold text-gray-900">{{ course.code }}
+      {% if course.is_active %}<span class="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">Active</span>{% else %}<span class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">Inactive — keys revoked</span>{% endif %}
+    </h1>
+    <p class="text-gray-600">{{ course.name }} &middot; {{ course.semester }}</p>
   </div>
+  <dl class="grid grid-cols-3 gap-4 text-sm sm:text-right">
+    <div><dt class="text-gray-500">Students</dt><dd class="text-lg font-semibold text-gray-900">{{ students|length }}</dd></div>
+    <div><dt class="text-gray-500">TAs</dt><dd class="text-lg font-semibold text-gray-900">{{ tas|length }}</dd></div>
+    <div><dt class="text-gray-500">Spent this month</dt>
+      <dd class="text-lg font-semibold text-gray-900">{% if team_usage %}${{ team_usage.spend|floatformat:2 }}{% if team_usage.max_budget %}<span class="text-sm font-normal text-gray-400"> / ${{ team_usage.max_budget|floatformat:0 }}</span>{% endif %}{% else %}&mdash;{% endif %}</dd></div>
+  </dl>
+</div>
 
-  <!-- Budget -->
-  <div class="mb-6 bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl px-4 py-4 sm:px-6">
-    <form method="post" action="{% url 'course_set_budget' course.pk %}" class="flex flex-wrap items-end gap-4">
-      {% csrf_token %}
-      <div>
-        <label for="id_monthly_budget" class="block text-sm font-medium text-gray-700">Course monthly budget (USD per student)</label>
-        <div class="mt-1 w-40">{{ budget_form.monthly_budget }}</div>
-      </div>
-      <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Save</button>
-      <p class="text-sm text-gray-500">
-        {% if course.monthly_budget is None %}Using global default: ${{ default_budget|floatformat:2 }}{% elif course.monthly_budget == 0 %}Unlimited{% else %}${{ course.monthly_budget }} per student{% endif %}
-        &middot; per-student overrides below take precedence. 0 = unlimited. Resets on the 1st of each month.
-      </p>
-    </form>
-    <form method="post" action="{% url 'course_set_access' course.pk %}" class="mt-6 border-t border-gray-100 pt-4">
-      {% csrf_token %}
-      <div class="flex flex-wrap items-end gap-4">
-        <div>
-          <label for="id_total_budget" class="block text-sm font-medium text-gray-700">Course-wide monthly cap (USD, all members)</label>
-          <div class="mt-1 w-40">{{ access_form.total_budget }}</div>
-        </div>
-        <p class="text-sm text-gray-500">
-          {% if team_usage %}Used this month: ${{ team_usage.spend|floatformat:2 }}{% if team_usage.max_budget %} of ${{ team_usage.max_budget|floatformat:2 }}{% endif %}{% if team_usage.budget_reset_at %} &middot; resets {{ team_usage.budget_reset_at|date:"M d" }}{% endif %}{% elif course.litellm_team_id %}Course usage unavailable{% else %}Team not created yet (proxy unreachable?)&mdash;save to retry{% endif %}
-        </p>
-      </div>
-      <fieldset class="mt-4">
-        <legend class="text-sm font-medium text-gray-700">Allowed models <span class="font-normal text-gray-500">(none checked = all models)</span></legend>
-        <div class="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-sm text-gray-700">
-          {% for checkbox in access_form.allowed_models %}
-          <label class="inline-flex items-center gap-2">{{ checkbox.tag }} {{ checkbox.choice_label }}</label>
-          {% endfor %}
-        </div>
-      </fieldset>
-      <button type="submit" class="mt-4 inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">Save access settings</button>
-    </form>
-    <form method="post" action="{% url 'course_reset_usage' course.pk %}" class="mt-3">
-      {% csrf_token %}
-      <button type="submit" onclick="return confirm('Reset this month\'s usage for every student and TA in {{ course.code|escapejs }}? All their spend counters go back to $0.')"
-              class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-        <i class="fas fa-undo mr-1"></i> Reset usage for everyone in this course
-      </button>
-    </form>
-  </div>
-
-  <!-- Tabs -->
-  <div data-controller="tabs" data-tabs-active-tab-class="border-indigo-500 text-indigo-600" data-tabs-inactive-tab-class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
-    <div class="border-b border-gray-200">
-      <nav class="-mb-px flex space-x-8">
-        <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent"
-           class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-          Students ({{ students|length }})
-        </a>
-        <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent"
-           class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-          TAs ({{ tas|length }})
-        </a>
-        <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent"
-           class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-          Import CSV
-        </a>
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+  <!-- Roster (main column) -->
+  <div class="lg:col-span-2">
+    <div class="rounded-xl bg-white shadow-sm ring-1 ring-gray-900/5"
+         data-controller="tabs" data-tabs-active-tab-class="border-indigo-500 text-indigo-600" data-tabs-inactive-tab-class="border-transparent text-gray-500 hover:text-gray-700">
+      <nav class="flex gap-6 border-b border-gray-200 px-6">
+        <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent" class="border-b-2 px-1 py-3 text-sm font-medium">Students <span class="ml-1 rounded-full bg-gray-100 px-2 text-xs text-gray-600">{{ students|length }}</span></a>
+        <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent" class="border-b-2 px-1 py-3 text-sm font-medium">TAs <span class="ml-1 rounded-full bg-gray-100 px-2 text-xs text-gray-600">{{ tas|length }}</span></a>
+        <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent" class="border-b-2 px-1 py-3 text-sm font-medium">Import CSV</a>
       </nav>
-    </div>
 
-    <!-- Students Tab -->
-    <div data-tabs-target="panel" class="mt-4">
-      <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
-        {% with enrollments=students role_label="student" %}
-        {% include "courses/_enrollment_table.html" %}
-        {% endwith %}
-
-        <div class="px-6 pb-4">
+      <div data-tabs-target="panel">
+        {% with enrollments=students role_label="student" %}{% include "courses/_enrollment_table.html" %}{% endwith %}
+        <div class="px-6 pb-5">
           {% url 'course_add_student' course.pk as add_student_url %}
-          {% with form=add_student_form action_url=add_student_url button_label="Student" %}
-          {% include "courses/_add_person_form.html" %}
-          {% endwith %}
+          {% with form=add_student_form action_url=add_student_url button_label="student" %}{% include "courses/_add_person_form.html" %}{% endwith %}
         </div>
       </div>
-    </div>
 
-    <!-- TAs Tab -->
-    <div data-tabs-target="panel" class="mt-4">
-      <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl overflow-hidden">
-        {% with enrollments=tas role_label="TA" %}
-        {% include "courses/_enrollment_table.html" %}
-        {% endwith %}
-
-        <div class="px-6 pb-4">
+      <div data-tabs-target="panel" class="hidden">
+        {% with enrollments=tas role_label="TA" %}{% include "courses/_enrollment_table.html" %}{% endwith %}
+        <div class="px-6 pb-5">
           {% url 'course_add_ta' course.pk as add_ta_url %}
-          {% with form=add_ta_form action_url=add_ta_url button_label="TA" %}
-          {% include "courses/_add_person_form.html" %}
-          {% endwith %}
+          {% with form=add_ta_form action_url=add_ta_url button_label="TA" %}{% include "courses/_add_person_form.html" %}{% endwith %}
         </div>
       </div>
-    </div>
 
-    <!-- Import CSV Tab -->
-    <div data-tabs-target="panel" class="mt-4">
-      <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl">
-        <div class="px-4 py-6 sm:p-8">
-          <h3 class="text-lg font-medium text-gray-900 mb-2">Bulk Import</h3>
-          <p class="text-sm text-gray-600 mb-4">
-            Upload a CSV file with an <code class="bg-gray-100 px-1 rounded">email</code> column.
-            Users will be created automatically.
-            Students enrolled in another course will be moved here.
-          </p>
-
-          <form method="post" action="{% url 'course_import_csv' course.pk %}" enctype="multipart/form-data">
-            {% csrf_token %}
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3 items-end">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">{{ csv_form.csv_file.label }}</label>
-                {{ csv_form.csv_file }}
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">{{ csv_form.role.label }}</label>
-                {{ csv_form.role }}
-              </div>
-              <div>
-                <button type="submit"
-                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
-                  <i class="fas fa-upload mr-2"></i> Import
-                </button>
-              </div>
-            </div>
-          </form>
-
-          {% if csv_results %}
-          <div class="mt-6 rounded-md bg-gray-50 p-4">
-            <h4 class="text-sm font-medium text-gray-900 mb-2">Import Results</h4>
-            <dl class="grid grid-cols-2 gap-2 sm:grid-cols-4 text-sm">
-              <div>
-                <dt class="text-gray-500">Users Created</dt>
-                <dd class="font-medium text-gray-900">{{ csv_results.created_users }}</dd>
-              </div>
-              <div>
-                <dt class="text-gray-500">Enrollments Created</dt>
-                <dd class="font-medium text-gray-900">{{ csv_results.created_enrollments }}</dd>
-              </div>
-              <div>
-                <dt class="text-gray-500">Moved</dt>
-                <dd class="font-medium text-gray-900">{{ csv_results.moved_enrollments }}</dd>
-              </div>
-              <div>
-                <dt class="text-gray-500">Skipped</dt>
-                <dd class="font-medium text-gray-900">{{ csv_results.skipped }}</dd>
-              </div>
-            </dl>
-            {% if csv_results.errors %}
-            <div class="mt-3">
-              <p class="text-sm font-medium text-red-700">Errors:</p>
-              <ul class="mt-1 text-sm text-red-600 list-disc list-inside">
-                {% for error in csv_results.errors %}
-                <li>{{ error }}</li>
-                {% endfor %}
-              </ul>
-            </div>
-            {% endif %}
-          </div>
+      <div data-tabs-target="panel" class="hidden px-6 py-5">
+        <p class="text-sm text-gray-600">Upload a CSV with an <code class="rounded bg-gray-100 px-1 text-xs">email</code> column (other columns are ignored; Excel exports work). Accounts are created automatically and students already in another course are moved here.</p>
+        <form method="post" action="{% url 'course_import_csv' course.pk %}" enctype="multipart/form-data" class="mt-4 grid grid-cols-1 items-end gap-4 sm:grid-cols-3">
+          {% csrf_token %}
+          <div><label class="mb-1 block text-sm font-medium text-gray-700">{{ csv_form.csv_file.label }}</label>{{ csv_form.csv_file }}</div>
+          <div><label class="mb-1 block text-sm font-medium text-gray-700">{{ csv_form.role.label }}</label>{{ csv_form.role }}</div>
+          <div><button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700"><i class="fas fa-upload mr-2"></i>Import</button></div>
+        </form>
+        {% if csv_results %}
+        <div class="mt-6 rounded-lg bg-gray-50 p-4">
+          <h4 class="mb-2 text-sm font-medium text-gray-900">Import results</h4>
+          <dl class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+            <div><dt class="text-gray-500">Users created</dt><dd class="font-medium text-gray-900">{{ csv_results.created_users }}</dd></div>
+            <div><dt class="text-gray-500">Enrolled</dt><dd class="font-medium text-gray-900">{{ csv_results.created_enrollments }}</dd></div>
+            <div><dt class="text-gray-500">Moved</dt><dd class="font-medium text-gray-900">{{ csv_results.moved_enrollments }}</dd></div>
+            <div><dt class="text-gray-500">Skipped</dt><dd class="font-medium text-gray-900">{{ csv_results.skipped }}</dd></div>
+          </dl>
+          {% if csv_results.errors %}
+          <ul class="mt-3 list-inside list-disc text-sm text-red-600">{% for error in csv_results.errors %}<li>{{ error }}</li>{% endfor %}</ul>
           {% endif %}
         </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings (side column) -->
+  <div class="space-y-6">
+    <div class="rounded-xl bg-white shadow-sm ring-1 ring-gray-900/5">
+      <div class="border-b border-gray-100 px-5 py-3"><h2 class="text-sm font-semibold text-gray-900">Budgets</h2></div>
+      <div class="space-y-5 px-5 py-4">
+        <form method="post" action="{% url 'course_set_budget' course.pk %}">
+          {% csrf_token %}
+          <label for="id_monthly_budget" class="block text-sm font-medium text-gray-700">Per student, per month</label>
+          <div class="mt-1 flex gap-2">
+            <div class="relative flex-1"><span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-gray-400">$</span>
+              <input type="number" name="monthly_budget" id="id_monthly_budget" step="0.01" min="0" placeholder="{{ default_budget|floatformat:2 }} (default)" value="{% if course.monthly_budget is not None %}{{ course.monthly_budget }}{% endif %}" class="block w-full rounded-md border-0 py-1.5 pl-7 pr-3 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600"></div>
+            <button type="submit" class="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Save</button>
+          </div>
+          <p class="mt-1 text-xs text-gray-500">Blank = global default (${{ default_budget|floatformat:2 }}). 0 = unlimited. Per-student overrides in the roster take precedence. Resets on the 1st.</p>
+        </form>
+        <form method="post" action="{% url 'course_set_access' course.pk %}" id="access-form">
+          {% csrf_token %}
+          <label for="id_total_budget" class="block text-sm font-medium text-gray-700">Whole course, per month</label>
+          <div class="mt-1 relative"><span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-gray-400">$</span>
+            {{ access_form.total_budget }}</div>
+          <p class="mt-1 text-xs text-gray-500">Hard cap across all members. Blank = no cap.
+            {% if team_usage and team_usage.max_budget %}{% widthratio team_usage.spend team_usage.max_budget 100 as tp %}Used {{ tp }}%.{% endif %}</p>
+
+          <fieldset class="mt-4">
+            <legend class="text-sm font-medium text-gray-700">Allowed models</legend>
+            <p class="text-xs text-gray-500">None checked = every model.</p>
+            <div class="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm text-gray-700">
+              {% for checkbox in access_form.allowed_models %}<label class="inline-flex items-center gap-2">{{ checkbox.tag }} <code class="text-xs">{{ checkbox.choice_label }}</code></label>{% endfor %}
+            </div>
+          </fieldset>
+          <button type="submit" class="mt-4 w-full rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Save cap &amp; models</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="rounded-xl bg-white shadow-sm ring-1 ring-red-200">
+      <div class="border-b border-red-100 px-5 py-3"><h2 class="text-sm font-semibold text-red-700">Danger zone</h2></div>
+      <div class="space-y-3 px-5 py-4 text-sm">
+        <form method="post" action="{% url 'course_reset_usage' course.pk %}" class="flex items-center justify-between gap-3">
+          {% csrf_token %}
+          <span class="text-gray-600">Zero everyone's spend counter for this month.</span>
+          <button type="submit" onclick="return confirm('Reset this month\'s usage for every student and TA in {{ course.code|escapejs }}?')" class="shrink-0 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Reset usage</button>
+        </form>
+        <form method="post" action="{% url 'course_toggle_active' course.pk %}" class="flex items-center justify-between gap-3">
+          {% csrf_token %}
+          {% if course.is_active %}
+          <span class="text-gray-600">Deactivating revokes every member's key (unless they're staff or in another active course).</span>
+          <button type="submit" onclick="return confirm('Deactivate {{ course.code|escapejs }} and revoke its members\' API keys?')" class="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50">Deactivate</button>
+          {% else %}
+          <span class="text-gray-600">Reactivating lets members get keys again.</span>
+          <button type="submit" class="shrink-0 rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700">Activate</button>
+          {% endif %}
+        </form>
       </div>
     </div>
   </div>

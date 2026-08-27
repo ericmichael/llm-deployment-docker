@@ -1,12 +1,7 @@
+/* Inline code inherits Tailwind utility styling from the templates; only code
+   inside highlighted <pre> blocks (Prism) keeps the dark theme. */
 code {
     text-shadow: none !important;
-}
-
-code:not(pre > code) {
-    background: #2d2d2d;
-    font-family: Consolas,Monaco,'Andale Mono','Ubuntu Mono',monospace;
-    color: #ccc;
-    padding: 4px;
 }
 
 .token.operator {

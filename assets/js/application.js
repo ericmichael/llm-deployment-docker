@@ -1,10 +1,14 @@
 import { Application } from "stimulus"
 import Prism from 'prismjs';
 
+import ClipboardController from "./controllers/clipboard_controller"
+import RevealController from "./controllers/reveal_controller"
+
 const application = Application.start();
-// No app-specific controllers currently; the Tailwind components below are
-// registered explicitly. (A require.context on a missing ./controllers dir
-// breaks `npm run build` on fresh checkouts.)
+// App controllers are registered explicitly (a require.context on the
+// directory breaks `npm run build` when it is empty on a fresh checkout).
+application.register('clipboard', ClipboardController)
+application.register('reveal', RevealController)
 
 // Import and register all TailwindCSS Components or just the ones you need
 import { Alert, Autosave, ColorPreview, Dropdown, Modal, Tabs, Popover, Toggle, Slideover } from "tailwindcss-stimulus-components"

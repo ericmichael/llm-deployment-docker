@@ -1,4 +1,5 @@
 {% extends 'base_generic.html' %}
+{% block title %}Usage · API Portal{% endblock %}
 
 {% block content %}
 <div class="flex flex-col">
@@ -69,15 +70,17 @@
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
     <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-6">
       <p class="text-sm text-gray-500">Total Spend</p>
-      <p class="text-2xl font-semibold text-gray-900">${{ total_spend|floatformat:4 }}</p>
+      <p class="text-2xl font-semibold text-gray-900">${{ total_spend|floatformat:2 }}</p>
     </div>
     <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-6">
-      <p class="text-sm text-gray-500">Active Users</p>
+      <p class="text-sm text-gray-500">Requests</p>
+      <p class="text-2xl font-semibold text-gray-900">{{ total_requests }}</p>
+      <p class="text-xs text-gray-400">{{ total_tokens }} tokens</p>
+    </div>
+    <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-6">
+      <p class="text-sm text-gray-500">Active users</p>
       <p class="text-2xl font-semibold text-gray-900">{{ total_users }}</p>
-    </div>
-    <div class="bg-white shadow-sm ring-1 ring-gray-900/5 rounded-xl p-6">
-      <p class="text-sm text-gray-500">Models Used</p>
-      <p class="text-2xl font-semibold text-gray-900">{{ by_model|length }}</p>
+      <p class="text-xs text-gray-400">{{ by_model|length }} model{{ by_model|length|pluralize }} used</p>
     </div>
   </div>
 
@@ -104,13 +107,13 @@
             <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ item.model }}</td>
             <td class="px-6 py-3 text-sm text-gray-500 text-right">{{ item.requests }}</td>
             <td class="px-6 py-3 text-sm text-gray-500 text-right">{{ item.tokens }}</td>
-            <td class="px-6 py-3 text-sm text-gray-500 text-right">${{ item.total_spend|floatformat:4 }}</td>
+            <td class="px-6 py-3 text-sm text-gray-500 text-right">${{ item.total_spend|floatformat:2 }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
       {% else %}
-      <div class="px-6 py-8 text-center text-sm text-gray-500">No model data for this period.</div>
+      <div class="px-6 py-8 text-center text-sm text-gray-500">{% if selected_course %}Per-model breakdown is only available for all courses.{% else %}No requests in this period.{% endif %}</div>
       {% endif %}
     </div>
 
@@ -119,13 +122,6 @@
       <div class="px-6 py-4 border-b border-gray-200">
         <h2 class="text-lg font-medium text-gray-900">Spend by User</h2>
       </div>
-      <form method="post" action="{% url 'usage_reset_all' %}" class="px-6 py-3 border-b border-gray-200 bg-gray-50">
-        {% csrf_token %}
-        <button type="submit" onclick="return confirm('Reset this month\'s usage for EVERY user? All spend counters go back to $0. Spend history is kept.')"
-                class="text-xs font-medium text-red-600 hover:text-red-800">
-          <i class="fas fa-undo mr-1"></i> Reset usage for all users
-        </button>
-      </form>
       {% if by_user %}
       <table class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
@@ -143,18 +139,35 @@
             <td class="px-6 py-3 text-sm font-medium text-gray-900">{{ item.email }}</td>
             <td class="px-6 py-3 text-sm text-gray-500 text-right">{{ item.requests }}</td>
             <td class="px-6 py-3 text-sm text-gray-500 text-right">{{ item.tokens }}</td>
-            <td class="px-6 py-3 text-sm text-gray-500 text-right">${{ item.total_spend|floatformat:4 }}</td>
-            <td class="px-6 py-3 text-sm text-right {% if item.budget_pct and item.budget_pct >= 100 %}text-red-600 font-medium{% elif item.budget_pct and item.budget_pct >= 80 %}text-amber-600{% else %}text-gray-500{% endif %}">
-              {% if item.budget is None %}&mdash;{% elif item.budget %}${{ item.budget|floatformat:2 }} ({{ item.budget_pct|floatformat:0 }}%){% else %}unlimited{% endif %}
+            <td class="px-6 py-3 text-sm text-gray-500 text-right">${{ item.total_spend|floatformat:2 }}</td>
+            <td class="px-6 py-3 text-sm text-right">
+              {% if item.budget is None %}<span class="text-gray-400">&mdash;</span>
+              {% elif item.budget %}
+              <div class="flex items-center justify-end gap-2">
+                <div class="h-1.5 w-16 overflow-hidden rounded-full bg-gray-100"><div class="h-1.5 rounded-full {% if item.budget_pct >= 100 %}bg-red-500{% elif item.budget_pct >= 80 %}bg-amber-500{% else %}bg-indigo-500{% endif %}" style="width: {% if item.budget_pct > 100 %}100{% else %}{{ item.budget_pct|floatformat:0 }}{% endif %}%"></div></div>
+                <span class="tabular-nums {% if item.budget_pct >= 100 %}text-red-600 font-medium{% elif item.budget_pct >= 80 %}text-amber-600{% else %}text-gray-500{% endif %}">{{ item.budget_pct|floatformat:0 }}% of ${{ item.budget|floatformat:0 }}</span>
+              </div>
+              {% else %}<span class="text-gray-400">unlimited</span>{% endif %}
             </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
       {% else %}
-      <div class="px-6 py-8 text-center text-sm text-gray-500">No user data for this period.</div>
+      <div class="px-6 py-8 text-center text-sm text-gray-500">No requests in this period. Spend appears here once students start making API calls.</div>
       {% endif %}
     </div>
   </div>
+</div>
+
+<div class="mt-6 flex items-center justify-between rounded-xl bg-white px-6 py-4 shadow-sm ring-1 ring-red-200">
+  <div>
+    <p class="text-sm font-semibold text-red-700">Reset everyone's usage</p>
+    <p class="text-xs text-gray-500">Zeroes the current-month spend counter on every key. Spend history above is unaffected. Course-level and per-student resets are on each course page.</p>
+  </div>
+  <form method="post" action="{% url 'usage_reset_all' %}">
+    {% csrf_token %}
+    <button type="submit" onclick="return confirm('Reset this month\'s usage for EVERY user?')" class="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50">Reset all</button>
+  </form>
 </div>
 {% endblock %}

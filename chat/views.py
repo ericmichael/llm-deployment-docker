@@ -19,6 +19,50 @@ def _ensure_litellm_virtual_key(user):
     return litellm_keys.ensure_key(user)
 
 
+def _default_model_for(user):
+    """Model to show in quickstart snippets: the global default if the user may call it, else their first allowed."""
+    default = getattr(settings, "LITELLM_DEFAULT_MODEL", "gpt-5")
+    allowed = litellm_keys.models_for(user)
+    if allowed and default not in allowed:
+        return allowed[0]
+    return default
+
+
+def _quickstart_snippets(base_url, key, model):
+    return {
+        "python": (
+            "from openai import OpenAI\n\n"
+            "client = OpenAI(\n"
+            f'    base_url="{base_url}",\n'
+            f'    api_key="{key}",  # better: os.environ["OPENAI_API_KEY"]\n'
+            ")\n\n"
+            "response = client.chat.completions.create(\n"
+            f'    model="{model}",\n'
+            '    messages=[{"role": "user", "content": "Hello!"}],\n'
+            ")\n"
+            "print(response.choices[0].message.content)"
+        ),
+        "javascript": (
+            'import OpenAI from "openai";\n\n'
+            "const client = new OpenAI({\n"
+            f'  baseURL: "{base_url}",\n'
+            f'  apiKey: "{key}", // better: process.env.OPENAI_API_KEY\n'
+            "});\n\n"
+            "const response = await client.chat.completions.create({\n"
+            f'  model: "{model}",\n'
+            '  messages: [{ role: "user", content: "Hello!" }],\n'
+            "});\n"
+            "console.log(response.choices[0].message.content);"
+        ),
+        "curl": (
+            f"curl {base_url}/chat/completions \\\n"
+            f'  -H "Authorization: Bearer {key}" \\\n'
+            '  -H "Content-Type: application/json" \\\n'
+            f"  -d '{{\"model\": \"{model}\", \"messages\": [{{\"role\": \"user\", \"content\": \"Hello!\"}}]}}'"
+        ),
+    }
+
+
 class CustomLoginView(LoginView):
     authentication_form = CustomUserAuthenticationForm
 
@@ -61,6 +105,8 @@ def developer_settings(request):
             "budget_source": budget_source,
             "budget_duration": getattr(settings, "LITELLM_KEY_BUDGET_DURATION", ""),
             "allowed_models": litellm_keys.models_for(request.user),
+            "default_model": _default_model_for(request.user),
+            "snippets": _quickstart_snippets(litellm_api_base, litellm_key or "sk-...", _default_model_for(request.user)),
         },
     )
 

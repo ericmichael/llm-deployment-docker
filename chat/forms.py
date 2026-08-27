@@ -116,7 +116,7 @@ class CourseAccessForm(forms.Form):
 
     total_budget = forms.DecimalField(
         required=False, min_value=0, max_digits=10, decimal_places=2,
-        widget=forms.NumberInput(attrs={"class": TAILWIND_INPUT, "step": "0.01", "min": "0", "placeholder": "no cap"}),
+        widget=forms.NumberInput(attrs={"class": TAILWIND_INPUT + " pl-7", "step": "0.01", "min": "0", "placeholder": "no cap"}),
     )
     allowed_models = forms.MultipleChoiceField(
         required=False, choices=(), widget=forms.CheckboxSelectMultiple

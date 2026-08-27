@@ -1,131 +1,139 @@
-<!-- templates/settings/index.html -->
 {% extends 'base_generic.html' %}
+{% block title %}My API key · API Portal{% endblock %}
 
 {% block content %}
-<div class="flex flex-col">
-  <!-- Header -->
-  <div class="mb-6">
-    <h1 class="text-2xl font-semibold text-gray-900">Developer Settings</h1>
+<div class="max-w-4xl">
+  <div class="mb-8">
+    <h1 class="text-2xl font-semibold text-gray-900">My API key</h1>
+    <p class="mt-1 text-sm text-gray-600">Use this key with any OpenAI-compatible SDK or tool. Keep it private — never commit it to a repository.</p>
   </div>
 
-  <div class="grid grid-cols-1 gap-x-8 gap-y-8 md:grid-cols-2">
-    <div>
-      <h2 class="text-base font-semibold leading-7 text-gray-900">API Settings</h2>
-      <p class="mt-1 text-sm leading-6 text-gray-600">
-        Use these credentials with the OpenAI SDK. Set <code class="bg-gray-100 px-1 rounded">base_url</code> to the API Base below.
-      </p>
-      <p class="mt-3 text-sm leading-6 text-gray-600">
-        Do not share your API key with others, or expose it in code.
-      </p>
+  {% if error_message %}
+  <div class="mb-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
+    <i class="fas fa-exclamation-triangle mr-2"></i>{{ error_message }}
+  </div>
+  {% endif %}
+
+  {% if litellm_api_key %}
+  <!-- Status -->
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-6">
+    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 sm:col-span-2">
+      <div class="flex items-baseline justify-between">
+        <p class="text-sm font-medium text-gray-500">Spending this month</p>
+        {% if usage and usage.budget_reset_at %}<p class="text-xs text-gray-400">resets {{ usage.budget_reset_at|date:"M j" }}</p>{% endif %}
+      </div>
+      {% if usage %}
+      <p class="mt-1 text-2xl font-semibold text-gray-900">${{ usage.spend|floatformat:2 }}
+        {% if budget %}<span class="text-base font-normal text-gray-400">of ${{ budget|floatformat:2 }}</span>{% endif %}</p>
+      {% if budget %}
+      {% widthratio usage.spend budget 100 as pct %}
+      <div class="mt-3 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+        <div class="h-2 rounded-full {% if pct >= 100 %}bg-red-500{% elif pct >= 80 %}bg-amber-500{% else %}bg-indigo-500{% endif %}" style="width: {% if pct > 100 %}100{% else %}{{ pct }}{% endif %}%"></div>
+      </div>
+      <p class="mt-2 text-xs text-gray-500">{{ pct }}% used · budget source: {{ budget_source }}{% if pct >= 100 %} · <span class="text-red-600 font-medium">limit reached — requests will be rejected until the reset</span>{% endif %}</p>
+      {% else %}
+      <p class="mt-2 text-xs text-gray-500">No spending limit on this key.</p>
+      {% endif %}
+      {% else %}
+      <p class="mt-1 text-sm text-gray-500">Usage is unavailable right now.{% if budget %} Your limit is ${{ budget|floatformat:2 }} per month.{% endif %}</p>
+      {% endif %}
     </div>
+    <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5">
+      <p class="text-sm font-medium text-gray-500">Models you can call</p>
+      {% if allowed_models %}
+      <ul class="mt-2 flex flex-wrap gap-1.5">{% for m in allowed_models %}<li><code class="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-800">{{ m }}</code></li>{% endfor %}</ul>
+      {% else %}
+      <p class="mt-1 text-sm text-gray-900">All models</p>
+      {% endif %}
+      <a href="{% url 'model_list' %}" class="mt-3 inline-block text-xs font-medium text-indigo-600 hover:text-indigo-800">See pricing &amp; limits &rarr;</a>
+    </div>
+  </div>
 
-    <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl">
-      <div class="px-4 py-6 sm:p-8">
-        <div class="grid grid-cols-1 gap-y-6">
-          {% if error_message %}
-          <div class="rounded-md bg-red-50 p-4">
-            <p class="text-sm text-red-700">{{ error_message }}</p>
-          </div>
-          {% endif %}
-
-          <div>
-            <label for="litellm_api_base" class="block text-sm font-medium leading-6 text-gray-900">API Base</label>
-            <div class="mt-2">
-              <input id="litellm_api_base" readonly value="{{ litellm_api_base }}" name="litellm_api_base" type="text"
-                class="px-3 block w-full rounded-md border-0 py-1.5 text-gray-900 bg-gray-50 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6">
-            </div>
-          </div>
-
-          {% if litellm_api_key %}
-          <div class="rounded-md bg-gray-50 p-4">
-            <p class="text-sm text-gray-700">
-              <span class="font-medium">Spending limit:</span>
-              {% if budget %}${{ budget|floatformat:2 }} per {% if budget_duration == "1mo" %}calendar month{% else %}{{ budget_duration|default:"period" }}{% endif %}{% else %}unlimited{% endif %}
-              {% if usage %}
-                &middot; <span class="font-medium">Used:</span> ${{ usage.spend|floatformat:2 }}
-                {% if usage.max_budget %}({% widthratio usage.spend usage.max_budget 100 %}%){% endif %}
-                {% if usage.budget_reset_at %}&middot; resets {{ usage.budget_reset_at|date:"M d" }}{% endif %}
-              {% endif %}
-            </p>
-          </div>
-          {% endif %}
-
-          <div>
-            <label for="litellm_api_key" class="block text-sm font-medium leading-6 text-gray-900">API Key</label>
-            <div class="mt-2">
-              <input id="litellm_api_key" readonly value="{{ litellm_api_key }}" name="litellm_api_key" type="text"
-                class="px-3 block w-full rounded-md border-0 py-1.5 text-gray-900 bg-gray-50 shadow-sm ring-1 ring-inset ring-gray-300 font-mono sm:text-sm sm:leading-6">
-            </div>
-            {% if litellm_api_key %}
-            <div class="mt-2 flex items-center justify-between">
-              <p class="text-xs text-gray-500">
-                Models: {% if allowed_models %}{{ allowed_models|join:", " }}{% else %}all{% endif %}
-              </p>
-              <form method="post" action="{% url 'regenerate_key' %}">
-                {% csrf_token %}
-                <button type="submit" onclick="return confirm('Regenerate your API key? The current key stops working immediately. Use this if your key was exposed (e.g. committed to a repo).')"
-                        class="text-xs font-medium text-indigo-600 hover:text-indigo-800"><i class="fas fa-sync-alt mr-1"></i>Regenerate key</button>
-              </form>
-            </div>
-            {% endif %}
-          </div>
+  <!-- Credentials -->
+  <div class="rounded-xl bg-white shadow-sm ring-1 ring-gray-900/5 mb-6">
+    <div class="border-b border-gray-100 px-6 py-4"><h2 class="text-base font-semibold text-gray-900">Credentials</h2></div>
+    <div class="px-6 py-5 space-y-5">
+      <div data-controller="clipboard">
+        <label for="litellm_api_base" class="block text-sm font-medium text-gray-700">Base URL</label>
+        <div class="mt-1 flex rounded-md shadow-sm">
+          <input id="litellm_api_base" data-clipboard-target="source" readonly value="{{ litellm_api_base }}" type="text"
+            class="block w-full rounded-l-md border-0 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-500">
+          <button type="button" data-action="clipboard#copy" data-clipboard-target="button"
+            class="inline-flex items-center rounded-r-md border border-l-0 border-gray-300 bg-white px-3 text-sm font-medium text-gray-600 hover:bg-gray-50"><i class="fas fa-copy mr-1"></i>Copy</button>
+        </div>
+      </div>
+      <div data-controller="clipboard reveal">
+        <label for="litellm_api_key" class="block text-sm font-medium text-gray-700">API key</label>
+        <div class="mt-1 flex rounded-md shadow-sm">
+          <input id="litellm_api_key" data-clipboard-target="source" data-reveal-target="input" readonly value="{{ litellm_api_key }}" type="password" autocomplete="off"
+            class="block w-full rounded-l-md border-0 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-500">
+          <button type="button" data-action="reveal#toggle"
+            class="inline-flex items-center border border-l-0 border-gray-300 bg-white px-3 text-sm font-medium text-gray-600 hover:bg-gray-50"><i data-reveal-target="icon" class="fas fa-eye"></i></button>
+          <button type="button" data-action="clipboard#copy" data-clipboard-target="button"
+            class="inline-flex items-center rounded-r-md border border-l-0 border-gray-300 bg-white px-3 text-sm font-medium text-gray-600 hover:bg-gray-50"><i class="fas fa-copy mr-1"></i>Copy</button>
+        </div>
+        <div class="mt-2 flex items-center justify-between text-xs text-gray-500">
+          <span>Treat this like a password. If it leaks, regenerate it — the old key stops working immediately.</span>
+          <form method="post" action="{% url 'regenerate_key' %}">
+            {% csrf_token %}
+            <button type="submit" onclick="return confirm('Regenerate your API key? The current key stops working immediately and you will need to update it everywhere it is used.')"
+                    class="font-medium text-indigo-600 hover:text-indigo-800"><i class="fas fa-sync-alt mr-1"></i>Regenerate key</button>
+          </form>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Omni Code Setup -->
-  <div class="grid grid-cols-1 gap-x-8 gap-y-8 md:grid-cols-2 mt-10">
-    <div>
-      <h2 class="text-base font-semibold leading-7 text-gray-900">Omni Code</h2>
-      <p class="mt-1 text-sm leading-6 text-gray-600">
-        Download and configure Omni Code to use your API key with the AI coding assistant.
-      </p>
-      <p class="mt-3">
-        <a href="https://ericmichael.github.io/omni-desktop/" target="_blank" rel="noopener noreferrer"
-           class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
-          Download Omni Code
-        </a>
-      </p>
+  <!-- Quickstart -->
+  <div class="rounded-xl bg-white shadow-sm ring-1 ring-gray-900/5"
+       data-controller="tabs" data-tabs-active-tab-class="border-indigo-500 text-indigo-600" data-tabs-inactive-tab-class="border-transparent text-gray-500 hover:text-gray-700">
+    <div class="border-b border-gray-100 px-6 pt-4">
+      <h2 class="text-base font-semibold text-gray-900">Quickstart</h2>
+      <nav class="-mb-px mt-3 flex gap-6">
+        <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent" class="border-b-2 px-1 pb-3 text-sm font-medium">Python</a>
+        <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent" class="border-b-2 px-1 pb-3 text-sm font-medium">JavaScript</a>
+        <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent" class="border-b-2 px-1 pb-3 text-sm font-medium">curl</a>
+        <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent" class="border-b-2 px-1 pb-3 text-sm font-medium">Omni Code</a>
+      </nav>
     </div>
 
-    <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl">
-      <div class="px-4 py-6 sm:p-8">
-        <h3 class="text-sm font-medium text-gray-900 mb-4">Configuration</h3>
-        <p class="text-sm text-gray-600 mb-4">
-          During onboarding, select <strong>OpenAI-Compatible</strong> as the provider type and enter the following settings:
-        </p>
-        <div class="grid grid-cols-1 gap-y-4">
-          <div>
-            <label class="block text-sm font-medium leading-6 text-gray-900">Base URL</label>
-            <div class="mt-1">
-              <input readonly value="{{ litellm_api_base }}" type="text"
-                class="px-3 block w-full rounded-md border-0 py-1.5 text-gray-900 bg-gray-50 shadow-sm ring-1 ring-inset ring-gray-300 sm:text-sm sm:leading-6">
-            </div>
-          </div>
-          <div>
-            <label class="block text-sm font-medium leading-6 text-gray-900">API Key</label>
-            <div class="mt-1">
-              <input readonly value="{{ litellm_api_key }}" type="text"
-                class="px-3 block w-full rounded-md border-0 py-1.5 text-gray-900 bg-gray-50 shadow-sm ring-1 ring-inset ring-gray-300 font-mono sm:text-sm sm:leading-6">
-            </div>
-          </div>
-          <div>
-            <label class="block text-sm font-medium leading-6 text-gray-900">Model Settings</label>
-            <div class="mt-1 rounded-md bg-gray-50 ring-1 ring-inset ring-gray-300 p-4">
-              <dl class="grid grid-cols-2 gap-y-2 text-sm">
-                <dt class="text-gray-500">Model ID</dt>
-                <dd class="text-gray-900 font-mono">gpt-5.2</dd>
-                <dt class="text-gray-500">Max Input Tokens</dt>
-                <dd class="text-gray-900 font-mono">272000</dd>
-                <dt class="text-gray-500">Max Output Tokens</dt>
-                <dd class="text-gray-900 font-mono">128000</dd>
-              </dl>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div data-tabs-target="panel" class="px-6 py-5">
+      <p class="mb-3 text-sm text-gray-600"><code class="rounded bg-gray-100 px-1 text-xs">pip install openai</code>, then:</p>
+      {% include "settings/_snippet.html" with code=snippets.python %}
+    </div>
+
+    <div data-tabs-target="panel" class="hidden px-6 py-5">
+      <p class="mb-3 text-sm text-gray-600"><code class="rounded bg-gray-100 px-1 text-xs">npm install openai</code>, then:</p>
+      {% include "settings/_snippet.html" with code=snippets.javascript %}
+    </div>
+
+    <div data-tabs-target="panel" class="hidden px-6 py-5">
+      {% include "settings/_snippet.html" with code=snippets.curl %}
+    </div>
+
+    <div data-tabs-target="panel" class="hidden px-6 py-5">
+      <p class="text-sm text-gray-600">
+        <a href="https://ericmichael.github.io/omni-desktop/" target="_blank" rel="noopener noreferrer" class="font-medium text-indigo-600 hover:text-indigo-800">Download Omni Code</a>,
+        then during onboarding choose <strong>OpenAI-Compatible</strong> as the provider and enter:
+      </p>
+      <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-3">
+        <dt class="text-gray-500">Base URL</dt><dd class="font-mono text-gray-900 sm:col-span-2">{{ litellm_api_base }}</dd>
+        <dt class="text-gray-500">API key</dt><dd class="text-gray-900 sm:col-span-2">the key above (use Copy)</dd>
+        <dt class="text-gray-500">Model ID</dt><dd class="font-mono text-gray-900 sm:col-span-2">{{ default_model }}</dd>
+        <dt class="text-gray-500">Max input tokens</dt><dd class="font-mono text-gray-900 sm:col-span-2">272000</dd>
+        <dt class="text-gray-500">Max output tokens</dt><dd class="font-mono text-gray-900 sm:col-span-2">128000</dd>
+      </dl>
     </div>
   </div>
+  {% elif not error_message %}
+  <div class="rounded-xl bg-white p-8 text-center shadow-sm ring-1 ring-gray-900/5">
+    <p class="text-sm text-gray-600">API keys are not enabled on this deployment.</p>
+  </div>
+  {% else %}
+  <div class="rounded-xl bg-white p-8 text-center shadow-sm ring-1 ring-gray-900/5">
+    <i class="fas fa-user-graduate fa-2x text-gray-300"></i>
+    <p class="mt-3 text-sm text-gray-600">Once your instructor enrolls you in an active course, your API key will appear here automatically.</p>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

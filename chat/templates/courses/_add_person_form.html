@@ -1,16 +1,8 @@
-<form method="post" action="{{ action_url }}" class="mt-4 border-t border-gray-200 pt-4">
+<form method="post" action="{{ action_url }}" class="mt-4 flex items-end gap-3 border-t border-gray-100 pt-4">
   {% csrf_token %}
-  <h4 class="text-sm font-medium text-gray-700 mb-3">Add {{ button_label }}</h4>
-  <div class="flex items-end space-x-3">
-    <div class="flex-1">
-      <label for="id_email" class="block text-xs font-medium text-gray-500 mb-1">Email</label>
-      {{ form.email }}
-    </div>
-    <div>
-      <button type="submit"
-              class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
-        Add
-      </button>
-    </div>
+  <div class="flex-1">
+    <label for="id_email" class="mb-1 block text-xs font-medium text-gray-500">Add a {{ button_label }} by email</label>
+    {{ form.email }}
   </div>
+  <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700">Add</button>
 </form>
