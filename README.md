@@ -142,9 +142,9 @@ This project now routes all OpenAI-compatible traffic through a stateless LiteLL
     litellm --config config/litellm-config.yaml --host 0.0.0.0 --port 4000
     ```
 
-7. Point Django at the proxy by exporting `LITELLM_BASE_URL=http://127.0.0.1:4000` before starting `python manage.py runserver`.
+7. Point Django at the proxy management API by exporting `LITELLM_PROXY_BASE_URL=http://localhost:8000/litellm` before starting `python manage.py runserver`.
 
-The provided `docker-compose.yml` starts both services (Django + LiteLLM) automatically. Override `LITELLM_BASE_URL` if your proxy runs elsewhere (for example, a remote server). For legacy direct-to-OpenAI usage or for running tests without the proxy, set `LITELLM_BASE_URL=https://api.openai.com/v1` so the existing VCR fixtures remain valid.
+The provided `docker-compose.yml` starts the unified app (Django + embedded LiteLLM) automatically. Override `LITELLM_PROXY_BASE_URL` if your proxy runs elsewhere. Tests mock all proxy calls and only need Postgres.
 
 ### Running Tests Against LiteLLM
 
@@ -160,7 +160,7 @@ Use the same stateless LiteLLM proxy while exercising Django's test suite to ens
 3. In another shell, point Django at the proxy while running tests:
 
     ```bash
-    LITELLM_BASE_URL=http://127.0.0.1:4000 python manage.py test chat.tests.integration
+    DATABASE_URL=postgres://postgres:postgres@localhost:5432/aistarterkit SECRET_KEY=x ENVIRONMENT=test python manage.py test chat.tests.integration
     ```
 
 The integration cassettes continue to short-circuit real HTTP calls, but running the proxy in parallel verifies that every server-side request carries the `LITELLM_SERVICE_KEY` authorization header.

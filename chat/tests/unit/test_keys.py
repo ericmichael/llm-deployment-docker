@@ -32,21 +32,31 @@ class EnsureKeyTests(TestCase):
         self.assertIsNotNone(self.user.litellm_key_expires)
         gen.assert_called_once()
 
+    @mock.patch("chat.litellm_keys.key_info")
     @mock.patch("chat.litellm_keys.generate_key", side_effect=fake_generate)
-    def test_reuses_unexpired_key(self, gen):
+    def test_reuses_unexpired_key(self, gen, info):
+        info.return_value = {"expires": (timezone.now() + timedelta(days=1)).isoformat()}
         self.user.litellm_key = "sk-old"
-        self.user.litellm_key_expires = timezone.now() + timedelta(days=1)
         self.user.save()
         self.assertEqual(litellm_keys.ensure_key(self.user), "sk-old")
         gen.assert_not_called()
 
+    @mock.patch("chat.litellm_keys.key_info")
     @mock.patch("chat.litellm_keys.generate_key", side_effect=fake_generate)
-    def test_renews_expired_key(self, gen):
+    def test_renews_expired_key(self, gen, info):
+        info.return_value = {"expires": (timezone.now() - timedelta(seconds=1)).isoformat()}
         self.user.litellm_key = "sk-old"
-        self.user.litellm_key_expires = timezone.now() - timedelta(seconds=1)
         self.user.save()
         self.assertEqual(litellm_keys.ensure_key(self.user), "sk-new")
         gen.assert_called_once()
+
+    @mock.patch("chat.litellm_keys.key_info", return_value=None)
+    @mock.patch("chat.litellm_keys.generate_key", side_effect=fake_generate)
+    def test_key_deleted_out_of_band_is_replaced(self, gen, info):
+        self.user.litellm_key = "sk-old"
+        self.user.litellm_key_expires = timezone.now() + timedelta(days=30)  # local state says valid
+        self.user.save()
+        self.assertEqual(litellm_keys.ensure_key(self.user), "sk-new")
 
     @mock.patch("chat.litellm_keys.key_info", return_value=None)
     @mock.patch("chat.litellm_keys.generate_key", side_effect=fake_generate)
@@ -241,23 +251,31 @@ class CalendarMonthTests(TestCase):
 
 
 @override_settings(LITELLM_KEY_DEFAULT_MODELS=[])
-class TeamDeleteClearsKeysTests(TestCase):
-    @mock.patch("chat.signals._after_commit", side_effect=lambda fn: fn())
-    @mock.patch("chat.litellm_keys.httpx.Client")
-    @mock.patch("chat.litellm_keys.ensure_team", return_value="team-1")
-    @override_settings(LITELLM_MASTER_KEY="m")
-    def test_members_local_keys_cleared(self, _ensure, client_cls, _oc):
-        client_cls.return_value.__enter__.return_value.post.return_value = mock.Mock(status_code=200, text="")
-        course = Course.objects.create(name="AI", code="CS-1", semester="Fall")
-        Course.objects.filter(pk=course.pk).update(litellm_team_id="team-1"); course.refresh_from_db()
-        member = User.objects.create_user(email="m@x.edu", litellm_key="sk-m", litellm_key_expires=timezone.now() + timedelta(days=9))
-        outsider = User.objects.create_user(email="o@x.edu", litellm_key="sk-o")
-        with mock.patch("chat.litellm_keys.sync_key"):
-            Enrollment.objects.create(course=course, user=member, role=Enrollment.Role.TA)
-        litellm_keys.delete_team(course)
-        member.refresh_from_db(); outsider.refresh_from_db()
-        self.assertEqual((member.litellm_key, member.litellm_key_expires), ("", None))
-        self.assertEqual(outsider.litellm_key, "sk-o")
+class TeamDeleteClearsKeysTests(ProxyMockMixin, TestCase):
+    def setUp(self):
+        self.a = Course.objects.create(name="A", code="CS-A", semester="Fall")
+        self.b = Course.objects.create(name="B", code="CS-B", semester="Fall")
+        Course.objects.filter(pk=self.a.pk).update(litellm_team_id="team-a")
+        Course.objects.filter(pk=self.b.pk).update(litellm_team_id="team-b")
+        self.a.refresh_from_db(); self.b.refresh_from_db()
+        # keyed to A (student there)
+        self.student = User.objects.create_user(email="s@x.edu", litellm_key="sk-s")
+        Enrollment.objects.create(course=self.a, user=self.student, role=Enrollment.Role.STUDENT)
+        # TA in A but student in B -> key lives in team-b
+        self.ta = User.objects.create_user(email="t@x.edu", litellm_key="sk-t")
+        Enrollment.objects.create(course=self.a, user=self.ta, role=Enrollment.Role.TA)
+        Enrollment.objects.create(course=self.b, user=self.ta, role=Enrollment.Role.STUDENT)
+        self.outsider = User.objects.create_user(email="o@x.edu", litellm_key="sk-o")
+
+    def test_only_keys_in_this_team_are_forgotten(self):
+        self.assertEqual({u.pk for u in litellm_keys.members_keyed_to(self.a)}, {self.student.pk})
+        self.a.delete()
+        self.proxy["delete_team_at_proxy"].assert_called_once_with("team-a")
+        for u in (self.student, self.ta, self.outsider):
+            u.refresh_from_db()
+        self.assertEqual(self.student.litellm_key, "")
+        self.assertEqual(self.ta.litellm_key, "sk-t")  # untouched: lives in team-b
+        self.assertEqual(self.outsider.litellm_key, "sk-o")
 
 
 class TeamAndModelScopeTests(ProxyMockMixin, TestCase):
@@ -300,7 +318,20 @@ class TeamAndModelScopeTests(ProxyMockMixin, TestCase):
 
     def test_course_delete_removes_team(self):
         self.course.delete()
-        self.proxy["delete_team"].assert_called_once()
+        self.proxy["delete_team_at_proxy"].assert_called_once_with("team-1")
+
+    def test_budget_source_matches_key_course(self):
+        older = Course.objects.create(name="Old", code="CS-0", semester="Fall")  # no budget, created first
+        budgeted = Course.objects.create(name="B", code="CS-2", semester="Fall", monthly_budget=5)
+        ta = User.objects.create_user(email="ta2@x.edu")
+        Enrollment.objects.create(course=older, user=ta, role=Enrollment.Role.TA)
+        Enrollment.objects.create(course=budgeted, user=ta, role=Enrollment.Role.TA)
+        self.assertEqual(litellm_keys.primary_course(ta).pk, older.pk)
+        # key's course has no budget -> falls back to the budgeted course
+        self.assertEqual(litellm_keys.effective_budget_with_source(ta), (5.0, "course CS-2"))
+        older.monthly_budget = 7
+        older.save()
+        self.assertEqual(litellm_keys.effective_budget_with_source(ta), (7.0, "course CS-0"))  # key's course wins
 
     def test_ta_tiebreak_is_deterministic(self):
         second = Course.objects.create(name="B", code="CS-2", semester="Fall")
@@ -337,12 +368,9 @@ class TeamAndModelScopeTests(ProxyMockMixin, TestCase):
 class RegenerateKeyTests(ProxyMockMixin, TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="s@x.edu", litellm_key="sk-old", litellm_key_id="id-old")
-        # revoke_key is mocked by the mixin; emulate its local side effect
-        def fake_revoke(u):
-            u.litellm_key = ""; u.litellm_key_id = ""; u.litellm_key_expires = None
-            u.save(update_fields=["litellm_key", "litellm_key_id", "litellm_key_expires"])
-            return True
-        self.proxy["revoke_key"].side_effect = fake_revoke
+        patcher = mock.patch("chat.litellm_keys.delete_key_strict")
+        self.delete = patcher.start()
+        self.addCleanup(patcher.stop)
 
     @mock.patch("chat.litellm_keys.generate_key", side_effect=RuntimeError("proxy down"))
     @mock.patch("chat.litellm_keys.key_info", return_value={"spend": 1.0})
@@ -356,7 +384,7 @@ class RegenerateKeyTests(ProxyMockMixin, TestCase):
     @mock.patch("chat.litellm_keys.key_info", return_value={"spend": 4.25})
     def test_rotation_carries_spend_and_revokes_old(self, info, gen):
         self.assertEqual(litellm_keys.regenerate_key(self.user), "sk-new")
-        self.proxy["revoke_key"].assert_called_once()
+        self.delete.assert_called_once_with("sk-old")
         self.assertEqual(gen.call_args.kwargs["spend"], 4.25)
         self.user.refresh_from_db()
         self.assertEqual((self.user.litellm_key, self.user.litellm_key_id), ("sk-new", "id-new"))
@@ -372,7 +400,17 @@ class RegenerateKeyTests(ProxyMockMixin, TestCase):
         self.user.litellm_key = ""
         self.user.save()
         self.assertEqual(litellm_keys.regenerate_key(self.user), "sk-new")
-        self.proxy["revoke_key"].assert_not_called()
+        self.delete.assert_not_called()
+
+    @mock.patch("chat.litellm_keys.generate_key", return_value=("sk-new", "id-new", None))
+    @mock.patch("chat.litellm_keys.key_info", return_value={"spend": 0})
+    def test_failed_delete_aborts_rotation(self, info, gen):
+        self.delete.side_effect = RuntimeError("proxy 500")
+        with self.assertRaises(RuntimeError):
+            litellm_keys.regenerate_key(self.user)
+        gen.assert_not_called()
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.litellm_key, "sk-old")  # nothing changed
 
 
 @override_settings(LITELLM_MASTER_KEY="m")
@@ -392,10 +430,11 @@ class TeamMembershipTests(TestCase):
         with self.assertRaises(RuntimeError):
             litellm_keys.ensure_team_member("team-1", "s@x.edu")
 
-    @mock.patch("chat.litellm_keys.key_info", return_value={"team_id": "team-1"})
+    @mock.patch("chat.litellm_keys.key_info", return_value={"team_id": "team-1", "budget_duration": "1mo"})
     @mock.patch("chat.litellm_keys.ensure_team_member")
     @mock.patch("chat.litellm_keys.httpx.Client")
     @mock.patch("chat.litellm_keys.key_scope_payload", return_value={"models": ["gpt-5"], "team_id": "team-1"})
+    @override_settings(LITELLM_KEY_MAX_BUDGET=10.0, LITELLM_KEY_BUDGET_DURATION="1mo")
     def test_update_adds_member_before_key_update(self, _scope, client_cls, member, _info):
         client = client_cls.return_value.__enter__.return_value
         client.post.return_value = mock.Mock(status_code=200, json=lambda: {})
@@ -403,7 +442,20 @@ class TeamMembershipTests(TestCase):
         litellm_keys.update_key_limits(user)
         member.assert_called_once_with("team-1", "s@x.edu")
         self.assertEqual(client.post.call_count, 1)  # same team: no move step
-        self.assertEqual(client.post.call_args.kwargs["json"]["team_id"], "team-1")
+        body = client.post.call_args.kwargs["json"]
+        self.assertEqual(body["team_id"], "team-1")
+        self.assertNotIn("budget_duration", body)  # unchanged -> not re-sent (would reset the window)
+
+    @mock.patch("chat.litellm_keys.key_info", return_value={"team_id": None, "budget_duration": "30d"})
+    @mock.patch("chat.litellm_keys.httpx.Client")
+    @mock.patch("chat.litellm_keys.key_scope_payload", return_value={"models": []})
+    @override_settings(LITELLM_KEY_MAX_BUDGET=10.0, LITELLM_KEY_BUDGET_DURATION="1mo")
+    def test_changed_budget_duration_is_sent(self, _scope, client_cls, _info):
+        client = client_cls.return_value.__enter__.return_value
+        client.post.return_value = mock.Mock(status_code=200, json=lambda: {})
+        user = User.objects.create_user(email="s@x.edu", litellm_key="sk-1")
+        litellm_keys.update_key_limits(user)
+        self.assertEqual(client.post.call_args.kwargs["json"]["budget_duration"], "1mo")
 
     @mock.patch("chat.litellm_keys.key_info", return_value={"team_id": "team-old"})
     @mock.patch("chat.litellm_keys.ensure_team_member")

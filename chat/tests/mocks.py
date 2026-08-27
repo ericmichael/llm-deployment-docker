@@ -2,7 +2,7 @@
 
 from unittest import mock
 
-PROXY_FUNCS = ("ensure_team", "delete_team", "sync_key", "revoke_key", "team_usage")
+PROXY_FUNCS = ("ensure_team", "delete_team_at_proxy", "sync_key", "revoke_key", "team_usage")
 
 
 class ProxyMockMixin:

@@ -48,13 +48,19 @@ def effective_budget_with_source(user):
         if getattr(user, "monthly_budget", None) is not None:
             return float(user.monthly_budget), "user"
         if user.pk:
-            enrollments = list(
-                user.enrollments.filter(course__is_active=True, course__monthly_budget__isnull=False)
-                .select_related("course")
-                .order_by("role")  # "student" sorts before "ta"
-            )
-            if enrollments:
-                return float(enrollments[0].course.monthly_budget), f"course {enrollments[0].course.code}"
+            # Prefer the course that owns the key (same choice as primary_course),
+            # then any other active course that sets a budget.
+            course = primary_course(user)
+            if course is None or course.monthly_budget is None:
+                enrollment = (
+                    user.enrollments.filter(course__is_active=True, course__monthly_budget__isnull=False)
+                    .select_related("course")
+                    .order_by("role", "course_id")
+                    .first()
+                )
+                course = enrollment.course if enrollment else None
+            if course is not None and course.monthly_budget is not None:
+                return float(course.monthly_budget), f"course {course.code}"
     return float(getattr(settings, "LITELLM_KEY_MAX_BUDGET", 0) or 0), "default"
 
 
@@ -211,22 +217,23 @@ def key_info(key: str) -> "dict | None":
 
 
 def _key_is_usable(user) -> bool:
-    """Whether the user's stored key still exists at the proxy and hasn't expired."""
+    """
+    Whether the user's stored key still exists at the proxy and hasn't
+    expired. Always asks the proxy so a key deleted out-of-band (LiteLLM UI,
+    rolled-back course delete, admin /key/delete) is replaced instead of
+    being shown as valid.
+    """
     if not user.litellm_key:
         return False
-    now = dj_timezone.now()
-    if user.litellm_key_expires is not None:
-        return user.litellm_key_expires > now
-    # Legacy key with unknown expiry: ask the proxy once and cache the answer.
     info = key_info(user.litellm_key)
     if info is None:
         return False
+    now = dj_timezone.now()
     expires = _parse_expires(info.get("expires"))
-    if expires is not None:
+    if expires != user.litellm_key_expires:
         user.litellm_key_expires = expires
         user.save(update_fields=["litellm_key_expires"])
-        return expires > now
-    return True
+    return expires is None or expires > now
 
 
 def ensure_key(user) -> str:
@@ -274,7 +281,11 @@ def regenerate_key(user) -> str:
             info = key_info(locked.litellm_key)
             if info is not None:
                 spend = float(info.get("spend") or 0)
-            revoke_key(locked)  # deletes at the proxy and clears local fields
+                delete_key_strict(locked.litellm_key)  # a leaked key must really die
+            locked.litellm_key = ""
+            locked.litellm_key_id = ""
+            locked.litellm_key_expires = None
+            locked.save(update_fields=["litellm_key", "litellm_key_id", "litellm_key_expires"])
     # The old key is gone at the proxy and cleared locally (committed above), so
     # if issuing the new one fails the user simply has no key until the next
     # settings visit re-provisions - never a dead key that looks valid.
@@ -336,29 +347,45 @@ def ensure_team(course) -> str:
     return team_id
 
 
+def members_keyed_to(course):
+    """Users whose key belongs to this course's team (their primary course is this one)."""
+    from django.contrib.auth import get_user_model
+
+    users = get_user_model().objects.filter(enrollments__course=course).exclude(litellm_key="").distinct()
+    return [u for u in users if primary_course(u) == course]
+
+
+def clear_local_keys(users) -> int:
+    """Forget local key state for users (proxy side handled by the caller)."""
+    from django.contrib.auth import get_user_model
+
+    return get_user_model().objects.filter(pk__in=[u.pk for u in users]).update(
+        litellm_key="", litellm_key_id="", litellm_key_expires=None
+    )
+
+
+def delete_team_at_proxy(team_id: str) -> None:
+    """Delete a team (LiteLLM also deletes every key in it). Logged, never raised."""
+    try:
+        with httpx.Client(timeout=TIMEOUT) as client:
+            resp = client.post(f"{base_url()}/team/delete", headers=master_headers(), json={"team_ids": [team_id]})
+        if resp.status_code >= 400 and resp.status_code != 404:
+            logger.warning("LiteLLM team delete %s returned %s: %s", team_id, resp.status_code, resp.text[:256])
+    except (httpx.HTTPError, RuntimeError) as exc:
+        logger.warning("LiteLLM team delete %s failed: %s", team_id, exc)
+
+
 def delete_team(course) -> bool:
     """
-    Delete the course's team. LiteLLM deletes every key in the team, so the
-    members' local key fields are cleared too; ensure_key re-issues (in their
-    remaining course, if any) on the next settings visit. Logged, never raised.
+    Course is being deleted: forget the local keys that live in its team
+    (LiteLLM deletes them with the team) and delete the team at the proxy.
+    Members whose key belongs to another course's team are left alone.
     """
     team_id = course.litellm_team_id
     if not team_id:
         return False
-    from django.contrib.auth import get_user_model
-
-    get_user_model().objects.filter(enrollments__course=course).exclude(litellm_key="").update(
-        litellm_key="", litellm_key_id="", litellm_key_expires=None
-    )
-    try:
-        with httpx.Client(timeout=TIMEOUT) as client:
-            resp = client.post(
-                f"{base_url()}/team/delete", headers=master_headers(), json={"team_ids": [team_id]}
-            )
-        if resp.status_code >= 400 and resp.status_code != 404:
-            logger.warning("LiteLLM team delete for %s returned %s: %s", course.code, resp.status_code, resp.text[:256])
-    except (httpx.HTTPError, RuntimeError) as exc:
-        logger.warning("LiteLLM team delete for %s failed: %s", course.code, exc)
+    clear_local_keys(members_keyed_to(course))
+    delete_team_at_proxy(team_id)
     return True
 
 
@@ -384,6 +411,17 @@ def team_usage(course):
         "max_budget": info.get("max_budget"),
         "budget_reset_at": _parse_expires(info.get("budget_reset_at")),
     }
+
+
+def delete_key_strict(key: str) -> None:
+    """Delete a key at the proxy; raises unless it is gone afterwards."""
+    with httpx.Client(timeout=TIMEOUT) as client:
+        resp = client.post(f"{base_url()}/key/delete", headers=master_headers(), json={"keys": [key]})
+    already_gone = resp.status_code == 404 or (
+        resp.status_code == 400 and ("not all keys" in resp.text.lower() or "no keys found" in resp.text.lower())
+    )
+    if resp.status_code >= 400 and not already_gone:
+        raise RuntimeError(f"LiteLLM key delete failed: {resp.status_code} {resp.text[:256]}")
 
 
 def revoke_key(user) -> bool:
@@ -444,6 +482,11 @@ def update_key_limits(user) -> bool:
     limits = key_limit_payload(user)
     email = user.email
     scope = key_scope_payload(user)
+    current = key_info(key) or {}
+    # LiteLLM recomputes budget_reset_at whenever budget_duration is sent;
+    # around the 1st that can skip a reset, so only send it when it changes.
+    if limits.get("budget_duration") == current.get("budget_duration"):
+        limits.pop("budget_duration", None)
     if scope.get("team_id"):
         ensure_team_member(scope["team_id"], email)
 
@@ -452,7 +495,6 @@ def update_key_limits(user) -> bool:
             # LiteLLM validates the key's *stored* model list against the
             # *new* team when team_id changes, so a move is three steps:
             # clear models -> change team -> apply the new allowlist (below).
-            current = key_info(key) or {}
             if current.get("team_id") != scope["team_id"]:
                 for step, body in (("clear models", {"models": []}), ("move team", {"team_id": scope["team_id"]})):
                     move = client.post(

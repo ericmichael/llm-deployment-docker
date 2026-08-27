@@ -115,7 +115,13 @@ def on_course_saved(sender, instance, created, **kwargs):
 
 @receiver(pre_delete, sender=Course)
 def on_course_delete(sender, instance, **kwargs):
-    litellm_keys.delete_team(instance)
+    team_id = instance.litellm_team_id
+    if not team_id:
+        return
+    # Local bookkeeping inside the transaction (rolls back with it); the
+    # proxy-side delete only once the course is really gone.
+    litellm_keys.clear_local_keys(litellm_keys.members_keyed_to(instance))
+    _after_commit(lambda: litellm_keys.delete_team_at_proxy(team_id))
 
 
 @receiver(pre_save, sender=CustomUser)
