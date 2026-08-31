@@ -1,3 +1,5 @@
+import logging
+
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models import Count, Q
@@ -7,6 +9,8 @@ from django.views.decorators.http import require_POST
 from django.conf import settings
 
 from . import litellm_keys, services, services_models
+
+logger = logging.getLogger(__name__)
 from .forms import AddStudentForm, AddTAForm, BudgetForm, CourseAccessForm, CourseForm, CSVImportForm
 from .models import Course, Enrollment
 
@@ -250,4 +254,41 @@ def course_set_access(request, course_id):
         messages.success(request, f"{course.code}: {cap_label}; models: {models_label}. Member keys re-synced.")
     else:
         messages.error(request, "Invalid access settings.")
+    return redirect("course_detail", course_id=course.pk)
+
+
+@staff_member_required
+@require_POST
+def course_revoke_keys(request, course_id):
+    """
+    Revoke the API keys of everyone in this course who is no longer entitled
+    to one (i.e. not staff and not enrolled in another active course).
+
+    Deactivating a course does this automatically; this is the manual sweep
+    for courses deactivated before that existed, or when the proxy was down
+    at the time.
+    """
+    course = get_object_or_404(Course, pk=course_id)
+    revoked, kept, failed = [], [], []
+    for user in {e.user for e in course.enrollments.select_related("user")}:
+        if litellm_keys.user_keeps_key(user):
+            kept.append(user.email)
+            continue
+        if not user.litellm_key:
+            continue
+        try:
+            litellm_keys.revoke_key(user)
+            revoked.append(user.email)
+        except Exception:
+            logger.exception("Key revocation failed for %s", user.email)
+            failed.append(user.email)
+
+    if revoked:
+        messages.success(request, f"Revoked {len(revoked)} key(s) in {course.code}.")
+    if kept:
+        messages.info(request, f"Kept {len(kept)} key(s) (staff or enrolled in another active course).")
+    if failed:
+        messages.warning(request, f"Could not revoke: {', '.join(failed)}. Try again once the proxy is reachable.")
+    if not revoked and not kept and not failed:
+        messages.info(request, "No keys to revoke in this course.")
     return redirect("course_detail", course_id=course.pk)

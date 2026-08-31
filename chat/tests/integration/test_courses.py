@@ -170,3 +170,31 @@ class RegenerateKeyViewTests(ProxyMockMixin, TestCase):
 
     def test_get_not_allowed(self):
         self.assertEqual(self.client.get(reverse("regenerate_key")).status_code, 405)
+
+
+class RevokeKeysViewTests(ProxyMockMixin, TestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user(email="prof@x.edu", password="pw", is_staff=True)
+        self.client.force_login(self.staff)
+        self.course = Course.objects.create(name="AI", code="CS-1", semester="Fall", is_active=False)
+        self.student = User.objects.create_user(email="s@x.edu", litellm_key="sk-s")
+        Enrollment.objects.create(course=self.course, user=self.student, role="student")
+        self.other = Course.objects.create(name="B", code="CS-2", semester="Fall")
+        self.ta = User.objects.create_user(email="t@x.edu", litellm_key="sk-t")
+        Enrollment.objects.create(course=self.course, user=self.ta, role="ta")
+        Enrollment.objects.create(course=self.other, user=self.ta, role="student")
+
+    def test_revokes_only_the_unentitled(self):
+        resp = self.client.post(reverse("course_revoke_keys", args=[self.course.pk]), follow=True)
+        revoked = {c.args[0].email for c in self.proxy["revoke_key"].call_args_list}
+        self.assertEqual(revoked, {"s@x.edu"})   # ta is still in an active course
+        self.assertContains(resp, "Revoked 1 key")
+        self.assertContains(resp, "Kept 1 key")
+
+    def test_non_staff_forbidden(self):
+        self.client.force_login(self.student)
+        self.client.post(reverse("course_revoke_keys", args=[self.course.pk]))
+        self.proxy["revoke_key"].assert_not_called()
+
+    def test_get_not_allowed(self):
+        self.assertEqual(self.client.get(reverse("course_revoke_keys", args=[self.course.pk])).status_code, 405)

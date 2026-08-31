@@ -26,6 +26,7 @@ urlpatterns = [
     path("courses/<int:course_id>/import-csv/", views_courses.course_import_csv, name="course_import_csv"),
     path("courses/<int:course_id>/budget/", views_courses.course_set_budget, name="course_set_budget"),
     path("courses/<int:course_id>/reset-usage/", views_courses.course_reset_usage, name="course_reset_usage"),
+    path("courses/<int:course_id>/revoke-keys/", views_courses.course_revoke_keys, name="course_revoke_keys"),
     path("courses/<int:course_id>/access/", views_courses.course_set_access, name="course_set_access"),
     path("enrollment/<int:enrollment_id>/remove/", views_courses.enrollment_remove, name="enrollment_remove"),
     path("enrollment/<int:enrollment_id>/budget/", views_courses.enrollment_set_budget, name="enrollment_set_budget"),

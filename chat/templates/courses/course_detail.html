@@ -115,6 +115,11 @@
           <span class="text-gray-600">Zero everyone's spend counter for this month.</span>
           <button type="submit" onclick="return confirm('Reset this month\'s usage for every student and TA in {{ course.code|escapejs }}?')" class="shrink-0 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Reset usage</button>
         </form>
+        <form method="post" action="{% url 'course_revoke_keys' course.pk %}" class="flex items-center justify-between gap-3">
+          {% csrf_token %}
+          <span class="text-gray-600">Revoke API keys for members who aren't staff or in another active course.</span>
+          <button type="submit" onclick="return confirm('Revoke API keys for members of {{ course.code|escapejs }}? They get a new one only if enrolled in an active course.')" class="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50">Revoke keys</button>
+        </form>
         <form method="post" action="{% url 'course_toggle_active' course.pk %}" class="flex items-center justify-between gap-3">
           {% csrf_token %}
           {% if course.is_active %}

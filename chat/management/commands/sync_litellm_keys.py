@@ -2,6 +2,7 @@
 Re-sync every stored LiteLLM virtual key with the proxy.
 
 For each user with a key this pushes, in one /key/update:
+  - revokes the key outright if the user no longer has an active enrollment
   - user_id + metadata (spend attribution on the usage dashboard)
   - the user's effective budget (user override > course budget > global default)
   - global rate limits and expiry (LITELLM_KEY_*)
@@ -40,8 +41,24 @@ class Command(BaseCommand):
         users = CustomUser.objects.exclude(litellm_key="").order_by("email")
         self.stdout.write(f"Found {users.count()} users with keys")
 
-        updated = failed = 0
+        updated = revoked = failed = 0
         for user in users:
+            # Reconcile both ways: a user who lost their entitlement (course
+            # deactivated or deleted while the proxy was down, or before this
+            # ran automatically) has their key revoked here.
+            if not litellm_keys.user_keeps_key(user):
+                if options["dry_run"]:
+                    self.stdout.write(f"  would revoke {user.email} (no active enrollment)")
+                    continue
+                try:
+                    litellm_keys.revoke_key(user)
+                    revoked += 1
+                    self.stdout.write(f"  revoked {user.email} (no active enrollment)")
+                except Exception as exc:
+                    failed += 1
+                    self.stderr.write(self.style.WARNING(f"  revoke failed {user.email}: {exc}"))
+                continue
+
             budget, source = litellm_keys.effective_budget_with_source(user)
             label = f"{user.email}: budget ${budget:g} ({source})"
             if options["dry_run"]:
@@ -55,4 +72,4 @@ class Command(BaseCommand):
                 failed += 1
                 self.stderr.write(self.style.WARNING(f"  failed {user.email}: {exc}"))
 
-        self.stdout.write(self.style.SUCCESS(f"Done. Synced {updated}, failed {failed}."))
+        self.stdout.write(self.style.SUCCESS(f"Done. Synced {updated}, revoked {revoked}, failed {failed}."))
