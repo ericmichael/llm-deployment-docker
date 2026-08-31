@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+from datetime import date
+
 from django.test import SimpleTestCase
 
 from chat import services_usage
@@ -55,3 +57,14 @@ class DailyActivityAggregationTests(SimpleTestCase):
         agg = services_usage.aggregate_from_days(days)
         self.assertEqual([m["model"] for m in agg["by_model"]], ["gpt-4o-mini"])
         self.assertEqual(agg["by_model"][0]["requests"], 2)
+
+
+class DateRangeTests(SimpleTestCase):
+    def test_month_means_current_budget_period_not_rolling_30_days(self):
+        start, end = services_usage.parse_date_range("month")
+        self.assertEqual(start, date.today().replace(day=1))
+        self.assertEqual(end, date.today())
+
+    def test_rolling_30_days_still_available(self):
+        start, end = services_usage.parse_date_range("days30")
+        self.assertEqual((end - start).days, 30)

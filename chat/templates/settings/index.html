@@ -20,9 +20,9 @@
     <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 sm:col-span-2">
       <div class="flex items-baseline justify-between">
         <p class="text-sm font-medium text-gray-500">Spending this month</p>
-        {% if usage and usage.budget_reset_at %}<p class="text-xs text-gray-400">resets {{ usage.budget_reset_at|date:"M j" }}</p>{% endif %}
+        {% if usage.reset_at %}<p class="text-xs text-gray-400">resets {{ usage.reset_at|date:"M j" }}</p>{% endif %}
       </div>
-      {% if usage %}
+      {% if usage.available %}
       <p class="mt-1 text-2xl font-semibold text-gray-900">${{ usage.spend|floatformat:2 }}
         {% if budget %}<span class="text-base font-normal text-gray-400">of ${{ budget|floatformat:2 }}</span>{% endif %}</p>
       {% if budget %}
@@ -30,12 +30,17 @@
       <div class="mt-3 h-2 w-full overflow-hidden rounded-full bg-gray-100">
         <div class="h-2 rounded-full {% if pct >= 100 %}bg-red-500{% elif pct >= 80 %}bg-amber-500{% else %}bg-indigo-500{% endif %}" style="width: {% if pct > 100 %}100{% else %}{{ pct }}{% endif %}%"></div>
       </div>
-      <p class="mt-2 text-xs text-gray-500">{{ pct }}% used · budget source: {{ budget_source }}{% if pct >= 100 %} · <span class="text-red-600 font-medium">limit reached — requests will be rejected until the reset</span>{% endif %}</p>
+      <p class="mt-2 text-xs text-gray-500">{{ pct }}% of your ${{ budget|floatformat:2 }} monthly limit ({{ budget_source }})</p>
       {% else %}
       <p class="mt-2 text-xs text-gray-500">No spending limit on this key.</p>
       {% endif %}
       {% else %}
       <p class="mt-1 text-sm text-gray-500">Usage is unavailable right now.{% if budget %} Your limit is ${{ budget|floatformat:2 }} per month.{% endif %}</p>
+      {% endif %}
+      {% if usage.blocked %}
+      <p class="mt-3 rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+        <i class="fas fa-ban mr-1"></i>Limit reached — requests are being rejected{% if usage.reset_at %} until {{ usage.reset_at|date:"M j" }}{% endif %}. Ask your instructor if you need it raised or reset.
+      </p>
       {% endif %}
     </div>
     <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5">

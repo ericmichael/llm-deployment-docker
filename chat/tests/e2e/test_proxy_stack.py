@@ -271,3 +271,33 @@ class RealtimeTests(StackTestCase):
         self.assertEqual(response["status"], "completed", response)
         spend = self.stack.wait_for_spend(key, lambda s: s > 0)
         self.assertGreater(spend, 0, "realtime spend must not be $0 (base_model alias)")
+
+
+class SettingsPageNumbersTests(StackTestCase):
+    """The number under 'Spending this month' must be this month's spend."""
+
+    def test_page_shows_month_to_date_not_the_raw_key_counter(self):
+        c = self.course("SP-1", allowed_models=["gpt-4o-mini"])
+        user, key = self.student("sp1@x.edu", c)
+        # a key carrying spend from before budgets existed
+        httpx.post(f"{self.stack.proxy_url}/key/update", headers=self.stack.master_headers(),
+                   json={"key": key, "spend": 456.03})
+        self.assertEqual(litellm_keys.key_info(key)["spend"], 456.03)
+
+        user.set_password("pw"); user.save()
+        self.client.force_login(user)
+        page = self.client.get(reverse("settings")).content.decode()
+
+        self.assertNotIn("456.03", page, "must not print the lifetime counter under 'this month'")
+        self.assertIn("$0.00", page)          # no calls this month
+        self.assertIn("of $10.00", page)
+        self.assertIn("Limit reached", page)  # but the key is over budget, so say so
+
+    def test_settings_and_dashboard_agree_on_the_same_user(self):
+        c = self.course("SP-2", allowed_models=["gpt-4o-mini"])
+        user, _ = self.student("sp2@x.edu", c)
+        mtd = services_usage.month_to_date_spend(user.email)
+        days = services_usage.get_daily_activity(services_usage.month_start(), date.today())
+        agg = services_usage.aggregate_from_days(days["days"], filter_emails=[user.email])
+        dash = agg["by_user"][0]["total_spend"] if agg["by_user"] else 0
+        self.assertEqual(float(mtd), float(dash))

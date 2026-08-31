@@ -25,6 +25,12 @@ def _get_litellm_client_config():
     return base_url, headers
 
 
+def month_start(today=None):
+    """First day of the current budget month (budgets reset on the 1st)."""
+    today = today or date.today()
+    return today.replace(day=1)
+
+
 def parse_date_range(range_key, custom_start=None, custom_end=None):
     """Convert a range key to (start_date, end_date) as date objects."""
     today = date.today()
@@ -32,16 +38,19 @@ def parse_date_range(range_key, custom_start=None, custom_end=None):
         return today, today
     elif range_key == "week":
         return today - timedelta(days=7), today
+    elif range_key == "days30":
+        return today - timedelta(days=30), today
     elif range_key == "custom" and custom_start and custom_end:
         return custom_start, custom_end
-    else:  # default: "month"
-        return today - timedelta(days=30), today
+    else:  # default: "month" = the current budget period (1st -> today)
+        return month_start(today), today
 
 
-def get_daily_activity(start_date, end_date):
+def get_daily_activity(start_date, end_date, user_id=None):
     """
     Fetch per-day spend from LiteLLM's aggregated daily table
-    (/user/daily/activity, admin/global view). Pages through all results.
+    (/user/daily/activity). Global unless `user_id` narrows it to one user.
+    Pages through all results.
 
     Returns {"success": bool, "days": list[dict], "message": str}. Each day dict:
       {"date": "YYYY-MM-DD", "spend": float, "requests": int, "tokens": int,
@@ -62,6 +71,7 @@ def get_daily_activity(start_date, end_date):
                         "end_date": str(end_date),
                         "page": page,
                         "page_size": 1000,
+                        **({"user_id": user_id} if user_id else {}),
                     },
                 )
                 resp.raise_for_status()
@@ -154,3 +164,16 @@ def _friendly_model_name(model_name):
     if "/" in model_name:
         return model_name.split("/", 1)[1]
     return model_name
+
+
+def month_to_date_spend(email):
+    """
+    This user's spend so far in the current budget month, from the same
+    aggregated table the staff usage dashboard reads, so the two screens
+    always agree. Returns Decimal, or None if the proxy is unreachable.
+    """
+    today = date.today()
+    activity = get_daily_activity(month_start(today), today, user_id=email)
+    if not activity["success"]:
+        return None
+    return sum((Decimal(str(day["spend"])) for day in activity["days"]), Decimal("0"))

@@ -1,6 +1,6 @@
 import logging
 
-from . import litellm_keys
+from . import litellm_keys, services_usage
 from .forms import CustomUserAuthenticationForm
 from django.contrib import messages
 from django.shortcuts import redirect, render
@@ -26,6 +26,27 @@ def _default_model_for(user):
     if allowed and default not in allowed:
         return allowed[0]
     return default
+
+
+def _month_usage(user, budget):
+    """
+    Spend for the current budget month, read from the same aggregated table
+    as the staff dashboard so both screens show the same number.
+
+    `blocked` comes from the key's own counter, because that is what LiteLLM
+    enforces the budget against - it can exceed the month's spend if the key
+    carries history from before budgets existed (clear it with
+    `manage.py reset_litellm_spend`).
+    """
+    spend = services_usage.month_to_date_spend(user.email)
+    info = litellm_keys.key_usage(user) or {}
+    counter = info.get("spend")
+    return {
+        "available": spend is not None,
+        "spend": spend if spend is not None else 0,
+        "reset_at": info.get("budget_reset_at"),
+        "blocked": bool(budget) and counter is not None and counter >= budget,
+    }
 
 
 def _quickstart_snippets(base_url, key, model):
@@ -80,7 +101,7 @@ def developer_settings(request):
         try:
             litellm_key = _ensure_litellm_virtual_key(request.user)
             if litellm_key:
-                usage = litellm_keys.key_usage(request.user)
+                usage = _month_usage(request.user, budget)
         except Exception:
             logger.exception("Could not provision API key for %s", request.user.email)
             error_message = "Could not provision your API key right now. Please try again later."
