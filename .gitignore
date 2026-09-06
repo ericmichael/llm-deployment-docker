@@ -170,8 +170,6 @@ tags
 .ruff_cache
 
 db/chroma/.
-db/duckdb/.
-db/sqlite3/.
 
 # Ignore node_modules
 node_modules/
@@ -189,3 +187,6 @@ vendor/
 assets/js/bundle.js
 assets/js/bundle.js.LICENSE.txt
 assets/css/app.css
+
+# Playwright MCP session artifacts (page snapshots; can contain live API keys)
+.playwright-mcp/

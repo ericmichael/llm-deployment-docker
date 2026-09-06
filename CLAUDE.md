@@ -31,8 +31,11 @@ npm run build
 python manage.py migrate
 python manage.py collectstatic --noinput
 python manage.py import_students COURSE_CODE path/to/csv.csv
+python manage.py import_tas COURSE_CODE path/to/tas.csv
 python manage.py sync_litellm_keys [--dry-run]   # re-push budgets/limits to all keys (also runs at boot)
 python manage.py reset_litellm_spend --user EMAIL | --course CODE | --all   # zero current-month spend counters
+python manage.py revoke_unenrolled_keys [--dry-run]   # sweep keys held by users with no active enrollment
+# fix_litellm_keys / harden_litellm_keys are deprecated aliases for sync_litellm_keys
 ```
 
 ## Architecture
@@ -87,7 +90,13 @@ Checks database connectivity (`SELECT 1`) and LiteLLM liveliness. Returns 200 fo
 
 ## Environment Variables
 
-Key settings are driven by env vars (see `.env` for development defaults):
+Key settings are driven by env vars. There are two files and they are not
+interchangeable: `.env` is local development only (docker compose, `manage.py`,
+`settings.py`'s `load_dotenv()`), and `.env.deploy` is read only by
+`rocketship.py` and holds the production settings plus the deploy credentials.
+Never put a production `DATABASE_URL` in `.env` — `settings.py` loads it, so a
+bare `manage.py` run would connect to Azure. See `docs/DEPLOYMENT.md`.
+
 - `DATABASE_URL` — PostgreSQL connection string
 - `LITELLM_MASTER_KEY`, `LITELLM_SERVICE_KEY` — LiteLLM authentication
 - `LITELLM_PROXY_BASE_URL` — LiteLLM management endpoint used by Django (default `http://localhost:8000/litellm`)
