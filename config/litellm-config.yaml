@@ -20,15 +20,6 @@ model_list:
       temperature: 1
     model_info:
       base_model: azure/gpt-5
-  - model_name: gpt-5.1
-    litellm_params:
-      model: azure/gpt-5.1
-      api_base: os.environ/AZURE_OPENAI_ENDPOINT
-      api_version: os.environ/OPENAI_API_VERSION
-      api_key: os.environ/AZURE_OPENAI_API_KEY
-      temperature: 1
-    model_info:
-      base_model: azure/gpt-5.1
   - model_name: gpt-5.2
     litellm_params:
       model: azure/gpt-5.2
