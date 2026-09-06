@@ -49,16 +49,6 @@ from dotenv import dotenv_values, load_dotenv
 load_dotenv(".env.deploy")
 
 
-def azure_login():
-    """Attempt to log into Azure CLI."""
-    try:
-        with open(os.devnull, "w") as devnull:
-            subprocess.run(["az", "login"], stdout=devnull, stderr=devnull, check=True)
-    except subprocess.CalledProcessError:
-        print("Error logging into Azure.")
-        return
-
-
 
 
 

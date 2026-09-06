@@ -15,17 +15,11 @@ WORKER_CLASS="uvicorn.workers.UvicornWorker"
 MAX_REQUESTS=${GUNICORN_MAX_REQUESTS:-0}
 MAX_REQUESTS_JITTER=${GUNICORN_MAX_REQUESTS_JITTER:-0}
 GUNICORN_PIDFILE=/tmp/gunicorn.pid
-SHUTTING_DOWN=0
 
 export LITELLM_NON_ROOT=${LITELLM_NON_ROOT:-true}
 
 # Create log directory
 mkdir -p /tmp/logs
-
-# Function to check if a process is running
-is_running() {
-    kill -0 "$1" 2>/dev/null
-}
 
 # Function to start Gunicorn with auto-restart
 start_gunicorn() {
