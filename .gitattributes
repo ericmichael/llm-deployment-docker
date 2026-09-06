@@ -1,0 +1,9 @@
+# Normalise line endings. Three files were committed with CRLF
+# (.dockerignore, docker-compose.yml, chat/migrations/0006_*) while everything
+# else is LF, so any tool that reads and writes a file in text mode produces a
+# whole-file diff. `text=auto` stores everything as LF and checks it out in the
+# platform's convention.
+* text=auto
+
+# Shell scripts run inside the Linux container: CRLF would break the shebang.
+*.sh text eol=lf
