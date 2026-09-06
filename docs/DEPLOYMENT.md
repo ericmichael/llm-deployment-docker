@@ -21,7 +21,9 @@ nothing.
 On your machine:
 
 - Docker, running
-- Azure CLI (`az`)
+- Azure CLI (`az`), logged in
+- Python with this project's dependencies — `rocketship.py` imports `requests`,
+  `yaml` and `dotenv`, all of which come from `pip install -r requirements.txt`
 
 In Azure, before anything below will work: a resource group, a container
 registry, a Linux App Service Plan, a Web App for Containers, a PostgreSQL
@@ -85,11 +87,28 @@ az webapp update -n $APP -g $RG --https-only true
 az webapp config set -n $APP -g $RG --always-on true
 ```
 
+Point the platform's health probe at the app's own health endpoint:
+
+```bash
+az webapp config set -n $APP -g $RG \
+  --generic-configurations '{"healthCheckPath":"/health/"}'
+```
+
 **Always On.** With it off, App Service unloads the container after roughly 20
 minutes idle, and the next request pays a full cold start — which for this app
 means booting the embedded LiteLLM proxy and running `sync_litellm_keys` before
 anything is served. Turn it on unless you are deliberately saving money on a
 plan that does not support it.
+
+**Health check.** `/health/` must be reachable unauthenticated or the probe
+reads a redirect as a failure — `/health/*` is in Easy Auth's `excludedPaths`
+for exactly that reason (see step 6). Note what the endpoint reports: it returns
+503 only when the **database** is unreachable, and 200 for "degraded", which is
+what a LiteLLM failure produces. So the platform restarts the instance for a
+database outage but not a proxy one, deliberately — restarting the container
+would not fix a proxy that is already struggling. With a single instance
+Azure restarts rather than routes around, after 10 consecutive failed pings
+(`WEBSITE_HEALTHCHECK_MAXPINGFAILURES` changes that).
 
 ### 4. PostgreSQL
 
@@ -266,8 +285,6 @@ registry:
   username: cs4341
   password: ${ROCKETSHIP_REGISTRY_PASSWORD}
 service: myapp
-github:
-  repo: ericmichael/llm-deployment-docker
 azure:
   subscription: ${AZURE_SUBSCRIPTION_ID}
   app_service:
@@ -276,9 +293,21 @@ azure:
     additional_env:
       DATABASE_URL: ${DATABASE_URL}
       ENVIRONMENT: production
+      CUSTOM_HOSTNAME: rgvaiclass.com
       WEBSITES_PORT: 8000
-      # ... see the file for the rest
+      WEBSITES_CONTAINER_START_TIME_LIMIT: 500
+      WEBSITES_ENABLE_APP_SERVICE_STORAGE: "false"
+      CONFIG_FILE_PATH: /usr/src/app/config/litellm-config.yaml
+      LITELLM_DB_SCHEMA: litellm
+      LITELLM_ENABLE_VIRTUAL_KEYS: true
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LITELLM_PROXY_BASE_URL: http://localhost:8000/litellm
+      DISABLE_ADMIN_UI: true
+      EASYAUTH_ENABLED: ${EASYAUTH_ENABLED}
 ```
+
+That is the whole file. There is no `github:` block: deployment does not
+involve GitHub.
 
 Every `${VAR}` is resolved from the environment (populated from `.env.deploy`)
 at deploy time, so no credential is written into this file. Values in
@@ -309,9 +338,9 @@ python rocketship.py deploy            # build, push, configure, restart (--no-c
 python rocketship.py ssh               # shell into the running container
 python rocketship.py logs              # stream live application logs
 python rocketship.py restart           # stop/start the App Service
-python rocketship.py download          # list backups in /home/backups
+python rocketship.py download          # list files in the Kudu /home/backups
 python rocketship.py download <file>   # download one via the Kudu VFS API
-python rocketship.py upload <file>     # upload one into /home/backups
+python rocketship.py upload <file>     # upload one into the Kudu /home/backups
 ```
 
 ### `deploy` in detail
