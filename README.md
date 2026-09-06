@@ -42,7 +42,7 @@ Django and a LiteLLM proxy run **in one process** behind a single ASGI router
 
 - Python 3.11+ (3.12 in the container; LiteLLM requires >= 3.11)
 - Node.js 20+ and npm
-- PostgreSQL 16 (or use the bundled Docker Compose service)
+- PostgreSQL (16 in the bundled Docker Compose service, 17 in production)
 - Docker, if you want the containerized path
 
 ## Dependencies
@@ -55,9 +55,9 @@ Django and a LiteLLM proxy run **in one process** behind a single ASGI router
   `uvicorn.workers.UvicornWorker`, so the stack is ASGI, not WSGI)
 - `channels`, `daphne`, `websockets` — WebSocket support
 - `psycopg2-binary`, `dj-database-url` — PostgreSQL
-- `openai`, `httpx` — HTTP clients
+- `httpx` — the HTTP client Django uses to talk to the proxy
+- `openai` — pinned for LiteLLM's benefit; no application code imports it
 - `whitenoise` — static file serving
-- `djangorestframework`
 - `python-dotenv`, `pyyaml`
 - `vcrpy` — test-only, records the end-to-end suite's Azure traffic
 
@@ -269,7 +269,11 @@ re-pull a moved `:latest` tag.
 python rocketship.py ssh               # shell into the running container
 python rocketship.py logs              # stream live application logs
 python rocketship.py restart           # stop/start the App Service
-python rocketship.py download          # list backups in /home/backups
+python rocketship.py download          # list files in the Kudu /home/backups
 python rocketship.py download <file>   # download one, via the Kudu VFS API
-python rocketship.py upload <file>     # upload one into /home/backups
+python rocketship.py upload <file>     # upload one into the Kudu /home/backups
 ```
+
+The last two talk to the Kudu (SCM) container, which has its own filesystem —
+files there are not visible to the running application. See the Storage section
+of `docs/DEPLOYMENT.md`.
