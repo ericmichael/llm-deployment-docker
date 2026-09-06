@@ -175,7 +175,16 @@ def _scrub_request(request):
     """Only Azure traffic is recorded; hide the tenant host and credentials."""
     if request.host.startswith("127.0.0.1") or request.host == "localhost":
         return None
-    request.uri = request.uri.replace(request.host, SCRUBBED_AZURE_HOST)
+    real_host = request.host
+    request.uri = request.uri.replace(real_host, SCRUBBED_AZURE_HOST)
+    # The Host header carries the tenant name too, and rewriting the URI does
+    # not touch it - cassettes recorded before this kept the real resource
+    # hostname. Matching ignores the host (see match_on), so replacing it is
+    # safe. filter_headers would drop the header entirely; this keeps the shape
+    # of the request intact.
+    for name in list(request.headers):
+        if name.lower() == "host":
+            request.headers[name] = SCRUBBED_AZURE_HOST
     return request
 
 
