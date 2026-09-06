@@ -5,7 +5,6 @@ Rocketship - Azure App Service Deployment Helper
 This script helps deploy applications to Azure App Service for Containers.
 It handles:
 - Docker image building and pushing to Azure Container Registry
-- GitHub Actions secrets management
 - Azure App Service configuration with sidecar containers
 - Remote access to the running container
 - Backup download/upload via the Kudu (SCM) filesystem
@@ -24,10 +23,8 @@ Prerequisites:
     - Docker installed
     - Azure CLI (`az`) installed and logged in
     - A `.env.deploy` holding the production settings and the deploy
-      credentials (registry password, subscription id, GitHub token).
-      `.env` is for local development and is never read here.
-    - GitHub personal access token (GITHUB_TOKEN in .env.deploy) - optional
-    - pynacl package (`pip install pynacl`)
+      credentials (registry password, subscription id). `.env` is for
+      local development and is never read here.
 """
 
 import argparse
@@ -35,18 +32,10 @@ import os
 import re
 import shutil
 import subprocess
-from base64 import b64encode
 
 import requests
 import yaml
 from dotenv import dotenv_values, load_dotenv
-
-try:
-    from nacl import encoding, public
-except ImportError:
-    print("Error: The 'nacl' library is required for this script.")
-    print("You can install it with 'pip install pynacl'.")
-    exit(1)
 
 # `.env.deploy` and nothing else. `.env` belongs to the local dev server, and
 # this script reaching into it was the source of two separate problems: `.env`
@@ -70,37 +59,7 @@ def azure_login():
         return
 
 
-def encrypt(public_key: str, secret_value: str) -> str:
-    """Encrypt a Unicode string using the public key."""
-    public_key = public.PublicKey(public_key.encode("utf-8"), encoding.Base64Encoder())
-    sealed_box = public.SealedBox(public_key)
-    encrypted = sealed_box.encrypt(secret_value.encode("utf-8"))
-    return b64encode(encrypted).decode("utf-8")
 
-
-def create_secret(token, repo, name, value):
-    """Create or update a GitHub Actions secret."""
-    public_key = get_public_key(token, repo)
-    encrypted_value = encrypt(public_key["key"], value)
-
-    url = f"https://api.github.com/repos/{repo}/actions/secrets/{name}"
-    headers = {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    data = {
-        "encrypted_value": encrypted_value,
-        "key_id": public_key["key_id"],
-    }
-    response = requests.put(url, headers=headers, json=data)
-    response.raise_for_status()
-
-
-def create_github_secrets(token, repo, secrets):
-    """Create multiple GitHub Actions secrets."""
-    for name, value in secrets.items():
-        if value:  # Skip empty values
-            create_secret(token, repo, name, str(value))
 
 
 def update_app_settings(azure, additional_env):
@@ -379,17 +338,6 @@ def get_git_sha():
         return None
 
 
-def get_public_key(token, repo):
-    """Get the public key for encrypting GitHub secrets."""
-    url = f"https://api.github.com/repos/{repo}/actions/secrets/public-key"
-    headers = {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
-    return response.json()
-
 
 def check_azure_cli():
     """Check if Azure CLI is installed."""
@@ -415,11 +363,6 @@ def check_dockerfile():
         exit(1)
 
 
-def check_github():
-    """Check if GitHub token is set. Returns True if set, False otherwise."""
-    github_token = os.getenv("GITHUB_TOKEN")
-    return bool(github_token and github_token != "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-
 
 def init():
     """Create starter config/azure-deploy.yml and .rocketship/ directory."""
@@ -433,7 +376,6 @@ def init():
             "password": "${ROCKETSHIP_REGISTRY_PASSWORD}",
         },
         "service": "your-app",
-        "github": {"repo": "${GITHUB_REPO}"},
         "azure": {
             "subscription": "${AZURE_SUBSCRIPTION_ID}",
             "app_service": {
@@ -609,15 +551,17 @@ exit 0
 
 #: Names that belong to a developer's machine or to the act of deploying, and
 #: never to the application that ends up running. Everything in .env.deploy is
-#: otherwise uploaded into the App Service configuration and the GitHub Actions
-#: secrets, which is how a registry password ends up sitting in the config of
-#: the container it pulled - readable by anyone who can read the configuration,
-#: and for no reason, because the running app never asks for it.
+#: otherwise uploaded into the App Service configuration, which is how a
+#: registry password ends up sitting in the config of the container it pulled -
+#: readable by anyone who can read the configuration, and for no reason,
+#: because the running app never asks for it.
 #:
 #: The Azure and LiteLLM credentials are NOT here and must not be: the embedded
 #: proxy resolves AZURE_OPENAI_*, OPENAI_API_VERSION and LITELLM_MASTER_KEY from
 #: the environment at boot, via os.environ/... in config/litellm-config.yaml.
 NOT_FOR_DEPLOYMENT = (
+    # Nothing here reads it any more, but it stays on the list so a token
+    # left in .env.deploy is never uploaded to App Service.
     "GITHUB_TOKEN",
     "ROCKETSHIP_",
     # Which subscription and which Web App to deploy *to*. The app inside has
@@ -705,26 +649,19 @@ def setup(no_cache=False):
     print("Rocketship - Azure App Service deployment")
     print("=" * 60)
 
-    print("\n[1/7] Checking Docker...")
+    print("\n[1/6] Checking Docker...")
     check_docker()
     print("      ✓ Docker found")
 
-    print("[2/7] Checking Dockerfile...")
+    print("[2/6] Checking Dockerfile...")
     check_dockerfile()
     print("      ✓ Dockerfile found")
 
-    print("[3/7] Checking GitHub token (optional)...")
-    has_github = check_github()
-    if has_github:
-        print("      ✓ GITHUB_TOKEN set")
-    else:
-        print("      ⚠ GITHUB_TOKEN not set, skipping GitHub secrets")
-
-    print("[4/7] Checking Azure CLI...")
+    print("[3/6] Checking Azure CLI...")
     check_azure_cli()
     print("      ✓ Azure CLI found")
 
-    print("[5/7] Loading config...")
+    print("[4/6] Loading config...")
     config = load_config()
     validate_config(config)
     print("      ✓ Config loaded and validated")
@@ -732,10 +669,8 @@ def setup(no_cache=False):
     registry = config.get("registry")
     image = config.get("image")
     azure = config.get("azure")
-    github = config.get("github")
-    github_token = os.getenv("GITHUB_TOKEN")
 
-    print("[6/7] Loading .env.deploy variables...")
+    print("[5/6] Loading .env.deploy variables...")
     # Only this file. `.env` is the dev server's, and it must not hold a
     # production DATABASE_URL either - every `manage.py` run outside docker
     # compose would open a connection to Azure.
@@ -744,7 +679,7 @@ def setup(no_cache=False):
 
     # Log into the registry and build/push image
     try:
-        print(f'\n[7/7] Docker build & push to {registry["server"]}...')
+        print(f'\n[6/6] Docker build & push to {registry["server"]}...')
         print('      Logging into registry...')
         subprocess.run(
             [
@@ -801,27 +736,7 @@ def setup(no_cache=False):
     # The tag Azure will pull — prefer SHA for cache-busting, fall back to latest
     deploy_tag = f"{image_base}:{git_sha}" if git_sha else f"{image_base}:latest"
 
-    # Create and push secrets to Github (optional)
-    print('\nConfiguring Azure (and GitHub if token provided)...')
-    if has_github and github and github.get("repo"):
-        print(f'      Pushing secrets to GitHub: {github["repo"]}')
-        try:
-            github_secrets = {
-                "ROCKETSHIP_REGISTRY_SERVER": registry["server"],
-                "ROCKETSHIP_REGISTRY_USERNAME": registry["username"],
-                "ROCKETSHIP_REGISTRY_PASSWORD": registry["password"],
-                "ROCKETSHIP_IMAGE": image,
-            }
-            all_github_secrets = {**env_variables, **github_secrets}
-            all_github_secrets.pop("GITHUB_TOKEN", None)
-            create_github_secrets(github_token, github["repo"], all_github_secrets)
-            print("      ✓ GitHub secrets configured")
-        except Exception as e:
-            print(f"      ⚠ GitHub secrets failed: {e}")
-            print("      Continuing with Azure deployment...")
-    else:
-        print("      ⚠ GitHub not configured, skipping secrets")
-
+    print('\nConfiguring Azure...')
     if azure:
         # Check if sidecars are configured
         sidecars = azure.get("app_service", {}).get("sidecars", {})
@@ -842,8 +757,6 @@ def setup(no_cache=False):
             sidecar_env = sidecar_config.get("env", {})
             all_azure_secrets.update(sidecar_env)
 
-        # Remove GitHub token from Azure settings
-        all_azure_secrets.pop("GITHUB_TOKEN", None)
         if update_app_settings(azure, all_azure_secrets):
             print("      ✓ Azure settings configured")
 
@@ -862,13 +775,8 @@ def setup(no_cache=False):
     print("\n" + "=" * 60)
     print("✓ Deployment setup complete!")
     print("=" * 60)
-    if has_github and github and github.get("repo"):
-        print("\nNext steps:")
-        print("  1. Push to 'main' branch to trigger GitHub Actions deployment")
-        print("  2. Monitor deployment at: https://github.com/{}/actions".format(github["repo"]))
-    else:
-        print("\nYour app has been deployed to Azure App Service.")
-        print("To redeploy, run: python rocketship.py deploy")
+    print("\nYour app has been deployed to Azure App Service.")
+    print("To redeploy, run: python rocketship.py deploy")
 
 
 def get_azure_config():

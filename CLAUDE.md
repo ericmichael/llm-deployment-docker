@@ -85,7 +85,7 @@ Checks database connectivity (`SELECT 1`) and LiteLLM liveliness. Returns 200 fo
 
 - **Local**: Docker Compose with PostgreSQL and hot-reload (`Dockerfile.dev`)
 - **Production**: `Dockerfile` (Python 3.12 + Node 20 base) → Azure Container Registry → Azure App Service
-- **CI/CD**: GitHub Actions — PRs run tests (`run-tests.yml`), pushes to main build and push the image tagged `:latest` and `:<sha>` (`deploy-azure-wappserv.yaml`); the App Service is repointed to the SHA tag only if `AZURE_WEBAPP_PUBLISH_PROFILE` + `AZURE_WEBAPP_NAME` secrets are set, otherwise deploy with `python rocketship.py deploy`
+- **CI**: GitHub Actions runs the test suite on pull requests (`run-tests.yml`). There is no deploy workflow — deployment is entirely local, via `python rocketship.py deploy`, which builds the image, pushes `:latest` and `:<sha>` to ACR, repoints the App Service at the SHA tag and restarts it
 - **Azure limit**: the App Service front door times out non-streaming responses at ~230s regardless of the 900s proxy/Gunicorn timeouts — long completions must be streamed
 
 ## Environment Variables

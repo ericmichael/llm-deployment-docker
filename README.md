@@ -200,7 +200,7 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/aistarterkit \
 
 ## Deployment
 
-The project includes a deployment script that automates the process of deploying the application to Azure and setting up GitHub Actions secrets. The deployment script uses a YAML configuration file to manage deployment settings.
+Deployment is local: `rocketship.py` builds the image, pushes it to Azure Container Registry, updates the App Service settings and repoints the Web App, all from your machine. There is no deploy pipeline — GitHub Actions only runs the tests on pull requests.
 
 ### Build Process
 
@@ -212,7 +212,6 @@ Before running the deployment script, ensure that the following dependencies are
 
 - `az`: The Azure CLI tool must be installed and available in your system's PATH. It is used to interact with Azure services.
 - `docker`: Docker must be installed and running to build and push the Docker image.
-- `pynacl`: This Python library is required for encryption operations used in the script. Install it using `pip install pynacl`.
 
 ### Configuration: `config/azure-deploy.yml`
 
@@ -237,8 +236,8 @@ machine from opening a connection to the Azure database.
 
 Everything in `.env.deploy` is uploaded as an App Service setting and a GitHub
 Actions secret, except the names matched by `NOT_FOR_DEPLOYMENT` in
-`rocketship.py` — `GITHUB_TOKEN`, `ROCKETSHIP_*`, `AZURE_SUBSCRIPTION_ID`,
-`AZURE_WEBAPP_NAME`. Those are credentials for the deploy, not for the thing
+`rocketship.py` — `ROCKETSHIP_*`, `AZURE_SUBSCRIPTION_ID`, `AZURE_WEBAPP_NAME`
+and `GITHUB_TOKEN`. Those are credentials for the deploy, not for the thing
 deployed, and the running app never asks for them.
 
 Both files are gitignored. Neither should ever be committed.
@@ -251,16 +250,14 @@ python rocketship.py deploy            # add --no-cache to skip the Docker cache
 
 This:
 
-1. Checks for Docker, a Dockerfile, `GITHUB_TOKEN` (optional) and the Azure CLI.
+1. Checks for Docker, a Dockerfile and the Azure CLI.
 2. Loads `config/azure-deploy.yml` and resolves its `${VAR}` placeholders.
 3. Logs into the container registry, builds the image, and pushes it tagged both
    `:latest` and `:<short git sha>`.
-4. If `GITHUB_TOKEN` is set, pushes the deployable `.env.deploy` values plus the
-   registry credentials to the repository as GitHub Actions secrets.
-5. Pushes the App Service settings, repoints the Web App at the **SHA-tagged**
+4. Pushes the App Service settings, repoints the Web App at the **SHA-tagged**
    image, and restarts it.
 
-Step 5 pins a SHA rather than `:latest` because App Service will not reliably
+Step 4 pins a SHA rather than `:latest` because App Service will not reliably
 re-pull a moved `:latest` tag.
 
 ### Other commands

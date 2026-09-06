@@ -1,27 +1,20 @@
 # Deployment Guide
 
-This project deploys to **Azure App Service for Containers** using a combination of the `rocketship.py` helper script and GitHub Actions for CI/CD.
+This project deploys to **Azure App Service for Containers** with the `rocketship.py` helper script, run from your machine. There is no deploy pipeline: GitHub Actions only runs the test suite on pull requests.
 
 ## Overview
 
 ```
-Local Setup (python rocketship.py deploy)
+python rocketship.py deploy
         │
-        ├── Build & push Docker image to Azure Container Registry (:latest + :<sha>)
-        ├── Push secrets to GitHub Actions
-        ├── Push App Service settings
+        ├── Build & push the image to Azure Container Registry (:latest + :<sha>)
+        ├── Push the App Service settings
         └── Repoint the Web App at the :<sha> image and restart
-
-Ongoing Deploys (git push to main)
-        │
-        └── GitHub Actions builds & pushes :latest + :<sha>
-                │
-                └── azure/webapps-deploy repoints the Web App at :<sha>
-                    (only when AZURE_WEBAPP_PUBLISH_PROFILE is set)
 ```
 
-Both paths pin a **SHA tag** rather than `:latest`, because App Service does not
-reliably re-pull a `:latest` tag that has moved.
+It pins a **SHA tag** rather than `:latest`, because App Service does not
+reliably re-pull a `:latest` tag that has moved. Pushing to `main` deploys
+nothing.
 
 ## Prerequisites
 
@@ -29,7 +22,6 @@ On your machine:
 
 - Docker, running
 - Azure CLI (`az`)
-- Python with `pynacl` (`pip install pynacl`), used to encrypt GitHub secrets
 
 In Azure, before anything below will work: a resource group, a container
 registry, a Linux App Service Plan, a Web App for Containers, a PostgreSQL
@@ -212,28 +204,11 @@ is a convention, not a requirement.
 through migration `0002`, but only on a database with no user at that address —
 so set them before the first deploy or create the superuser by hand later.
 
-### 8. GitHub token (optional)
-
-Only needed if you want `rocketship.py` to push GitHub Actions secrets for the
-CI path. A classic PAT with the `repo` scope, or a fine-grained token with
-read/write on **Secrets** for the repository. Set it as `GITHUB_TOKEN` in
-`.env.deploy`; it is never uploaded to Azure.
-
-For CI to deploy as well as build, add two repository secrets by hand:
-`AZURE_WEBAPP_NAME` (your `$APP`) and `AZURE_WEBAPP_PUBLISH_PROFILE`, from:
-
-```bash
-az webapp deployment list-publishing-profiles -n $APP -g $RG --xml
-```
-
-Without them the workflow builds and pushes the image but never repoints the
-Web App.
-
-### 9. Point the repo at your resources
+### 8. Point the repo at your resources
 
 Edit `config/azure-deploy.yml` — `image`, `registry.server`, `registry.username`,
-`github.repo`, `app_service.app_name`, `app_service.resource_group`, and
-`CUSTOM_HOSTNAME` under `additional_env` — to match what you just created. The
+`app_service.app_name`, `app_service.resource_group`, and `CUSTOM_HOSTNAME`
+under `additional_env` — to match what you just created. The
 `${VAR}` placeholders resolve from `.env.deploy` and should be left alone.
 
 ## The two env files
@@ -259,8 +234,8 @@ Both files are gitignored (`.env`, `.env.*`). Neither is ever committed.
 
 ### What is and is not uploaded
 
-Everything in `.env.deploy` becomes an App Service setting and a GitHub Actions
-secret, except the prefixes listed in `NOT_FOR_DEPLOYMENT` in `rocketship.py`:
+Everything in `.env.deploy` becomes an App Service setting, except the prefixes
+listed in `NOT_FOR_DEPLOYMENT` in `rocketship.py`:
 
 ```python
 NOT_FOR_DEPLOYMENT = (
@@ -280,11 +255,6 @@ The `AZURE_OPENAI_*`, `OPENAI_API_VERSION` and `LITELLM_MASTER_KEY` values are
 deliberately **not** on that list and must not be: the embedded proxy resolves
 them from the environment at boot, through the `os.environ/...` references in
 `config/litellm-config.yaml`.
-
-The registry credentials the GitHub Actions workflow needs
-(`ROCKETSHIP_REGISTRY_SERVER`/`USERNAME`/`PASSWORD`, `ROCKETSHIP_IMAGE`) are
-still pushed to GitHub — `setup()` adds them explicitly after the filtered env,
-so the denylist does not starve CI.
 
 ## Configuration: `config/azure-deploy.yml`
 
@@ -345,29 +315,25 @@ python rocketship.py upload <file>     # upload one into /home/backups
 
 ### `deploy` in detail
 
-1. **Validates prerequisites** — Docker, a Dockerfile, `GITHUB_TOKEN` (optional), Azure CLI
+1. **Validates prerequisites** — Docker, a Dockerfile, the Azure CLI
 2. **Loads config** — reads `config/azure-deploy.yml`, substitutes `${VAR}` placeholders
 3. **Docker build & push** — logs into ACR, builds, pushes `:latest` and `:<short git sha>`
-4. **GitHub secrets** — encrypts the deployable `.env.deploy` values with a libsodium
-   sealed box and PUTs them, plus the `ROCKETSHIP_*` registry credentials
-5. **Azure App Service** — pushes settings via a temp JSON file, repoints the container
+4. **Azure App Service** — pushes settings via a temp JSON file, repoints the container
    at the SHA tag, then stop/starts the Web App
 
 App settings are pushed as one JSON file and never as individual
 `--settings K=V` arguments: argv is world-readable through `ps`, and these are
 secrets. A failure aborts rather than retrying key-by-key.
 
-## CI/CD Pipeline
+## Continuous integration
 
-`.github/workflows/deploy-azure-wappserv.yaml` handles ongoing deployments:
+`.github/workflows/run-tests.yml` runs the unit and integration suites against a
+PostgreSQL service container on every pull request. It reads no secrets.
 
-1. On push to `main`
-2. Builds the image with the GitHub Actions cache
-3. Pushes `:latest` and `:<github.sha>` to ACR
-4. Repoints App Service at `:<github.sha>` — **only if** the
-   `AZURE_WEBAPP_PUBLISH_PROFILE` secret is set (App Service → Get publish
-   profile). Without it the step is skipped and the new image is built but never
-   deployed; use `python rocketship.py deploy` instead.
+There is deliberately no deploy workflow. Deployment happens from a machine that
+already holds `.env.deploy` and an `az login` session, which keeps the
+production credentials off GitHub entirely — nothing needs to be mirrored into
+repository secrets, and a push can never move production.
 
 ## Storage
 
@@ -418,7 +384,6 @@ Assuming the provisioning above is done:
    # Deploy credentials - filtered out before upload
    AZURE_SUBSCRIPTION_ID=...
    ROCKETSHIP_REGISTRY_PASSWORD=...
-   GITHUB_TOKEN=...                  # optional
 
    # Django
    SECRET_KEY=...
@@ -470,11 +435,8 @@ Assuming the provisioning above is done:
    your identity provider, and land on `/chat/settings/` with a virtual key
    issued.
 
-4. Subsequent deploys — push to `main`, or re-run `rocketship.py deploy`:
-
-   ```bash
-   git push origin main
-   ```
+4. Subsequent deploys — re-run the same command. Pushing to `main` publishes
+   code, not a deployment.
 
 ## Operational notes
 

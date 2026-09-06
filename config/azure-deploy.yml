@@ -4,8 +4,6 @@ registry:
   server: cs4341.azurecr.io
   username: cs4341
 service: myapp
-github:
-  repo: ericmichael/llm-deployment-docker
 azure:
   subscription: ${AZURE_SUBSCRIPTION_ID}
   app_service:
