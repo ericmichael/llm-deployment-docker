@@ -22,8 +22,6 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'aistarterkit.settings')
 # is populated before importing code that may import ORM models.
 django_asgi_app = get_asgi_application()
 
-from chat.routing import websocket_urlpatterns
-
 
 def _register_base_model_prices():
     """
@@ -89,7 +87,6 @@ application = ProtocolTypeRouter({
             [
                 re_path(r"^v1/realtime/?$", litellm_asgi_app),
                 re_path(r"^realtime/?$", litellm_asgi_app),
-                *websocket_urlpatterns,
             ]
         )
     ),

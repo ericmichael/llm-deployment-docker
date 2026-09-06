@@ -107,8 +107,6 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "channels",  # WebSocket support
     "chat",
-    "rest_framework",
-    "rest_framework.authtoken",
 ]
 
 MIDDLEWARE = [
@@ -196,12 +194,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
-    ],
-}
-
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
 
@@ -234,7 +226,6 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGIN_URL = "login"
 
-OPENAI_API_TYPE = os.getenv("OPENAI_API_TYPE", "openai")
 OPENAI_API_VERSION = os.getenv("OPENAI_API_VERSION", "2024-10-21")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -271,45 +262,21 @@ LITELLM_KEY_DEFAULT_MODELS = [
     m.strip() for m in os.getenv("LITELLM_KEY_DEFAULT_MODELS", "").split(",") if m.strip()
 ]
 
-_litellm_model_env = os.getenv("LITELLM_MODEL_LIST")
-if _litellm_model_env:
-    _litellm_models = [value.strip() for value in _litellm_model_env.split(",") if value.strip()]
-else:
-    _litellm_models = []
-if LITELLM_DEFAULT_MODEL not in _litellm_models:
-    _litellm_models.append(LITELLM_DEFAULT_MODEL)
-LITELLM_MODEL_LIST = _litellm_models or [LITELLM_DEFAULT_MODEL]
-
 # Azure OpenAI Settings
 AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-# The Azure Inference (Responses/Assistants/Vector Stores) API version.
-# Default to the current preview that defines the /responses endpoint.
-AZURE_OPENAI_INFERENCE_API_VERSION = os.getenv(
-    "AZURE_OPENAI_INFERENCE_API_VERSION", "2025-04-01-preview"
-)
-
-# Passthrough debugging (adds verbose server logs and optional debug headers)
-DEBUG_OPENAI_PASSTHROUGH = os.getenv("DEBUG_OPENAI_PASSTHROUGH", "false").lower() in (
-    "1",
-    "true",
-    "yes",
-    "on",
-)
 
 AUTH_USER_MODEL = "chat.CustomUser"
-
-DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME")
 
 DEFAULT_ADMIN_EMAIL = os.getenv("DEFAULT_ADMIN_EMAIL")
 
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD")
 
 # ------------------------------------------------------------
-# Logging configuration for passthrough debugging
+# Logging configuration
 # ------------------------------------------------------------
-# This routes DEBUG logs from chat.views to the console so that
-# DEBUG_OPENAI_PASSTHROUGH (or ?debug=1) messages are visible.
+# Routes DEBUG logs from chat.views (key issue/regeneration, budget
+# resolution) to the console.
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -326,7 +293,6 @@ LOGGING = {
         }
     },
     "loggers": {
-        # Our passthrough endpoint logs here
         "chat.views": {
             "handlers": ["console"],
             "level": "DEBUG",

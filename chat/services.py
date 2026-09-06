@@ -14,7 +14,7 @@ from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
 
 from . import litellm_keys
-from .models import Course, Enrollment
+from .models import Enrollment
 
 User = get_user_model()
 

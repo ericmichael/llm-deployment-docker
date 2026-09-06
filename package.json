@@ -15,7 +15,6 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
-    "idiomorph": "^0.0.9",
     "stimulus": "^3.2.2",
     "tailwindcss-stimulus-components": "^4.0.4"
   },

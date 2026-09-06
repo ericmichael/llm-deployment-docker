@@ -49,7 +49,6 @@ def get_model_info():
         models = []
         for raw in raw_models:
             info = raw.get("model_info", {})
-            params = raw.get("litellm_params", {})
 
             # Build capabilities list from supports_* flags
             capabilities = []
@@ -84,7 +83,7 @@ def get_model_info():
         models.sort(key=lambda m: m["name"])
         return {"success": True, "models": models, "message": ""}
 
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to fetch model info")
         return {"success": False, "models": [], "message": "Could not fetch model info from the proxy. Please try again later."}
 
