@@ -121,12 +121,20 @@ compose overrides to point at its own Postgres container.
 
 ### Environment variables
 
-Two files, and they are not interchangeable:
+Two files, and they are not interchangeable. Each has a committed template:
 
-| File | Read by | Contents |
-|------|---------|----------|
-| `.env` | docker compose, `manage.py`, `settings.py` | local development only |
-| `.env.deploy` | `rocketship.py` only | production settings + deploy credentials |
+```bash
+cp .env.example .env                                  # local development
+cp .env.deploy.example .env.deploy && chmod 600 .env.deploy   # deployment
+```
+
+| File | Template | Read by | Contents |
+|------|----------|---------|----------|
+| `.env` | `.env.example` | docker compose, `manage.py`, `settings.py` | local development only |
+| `.env.deploy` | `.env.deploy.example` | `rocketship.py` only | production settings + deploy credentials |
+
+The templates list every variable the app reads, with defaults and the commands
+that produce each credential.
 
 Never put a production `DATABASE_URL` in `.env` — `settings.py` calls
 `load_dotenv()`, so a bare `manage.py` run would connect to it. Both files are

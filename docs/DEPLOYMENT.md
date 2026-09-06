@@ -214,7 +214,8 @@ under `additional_env` — to match what you just created. The
 ## The two env files
 
 `rocketship.py` reads **`.env.deploy` and nothing else**. `.env` belongs to the
-local dev server.
+local dev server. Both have committed templates - `.env.example` and
+`.env.deploy.example` - listing every variable the app reads.
 
 | File | Read by | Contents |
 |------|---------|----------|
@@ -378,7 +379,15 @@ for.
 
 Assuming the provisioning above is done:
 
-1. Write `.env.deploy` (gitignored; `chmod 600` it):
+1. Write `.env.deploy`, starting from the committed template:
+
+   ```bash
+   cp .env.deploy.example .env.deploy
+   chmod 600 .env.deploy
+   ```
+
+   It is gitignored, and lists every variable with the command that produces
+   it. Filled in, it looks like:
 
    ```
    # Deploy credentials - filtered out before upload

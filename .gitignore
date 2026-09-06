@@ -105,6 +105,10 @@ venv.bak/
 *.env
 .env.*
 
+# ...but the templates are meant to be committed. They hold no values.
+!.env.example
+!.env.deploy.example
+
 # Spyder project settings
 .spyderproject
 .spyproject
