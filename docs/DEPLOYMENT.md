@@ -25,10 +25,216 @@ reliably re-pull a `:latest` tag that has moved.
 
 ## Prerequisites
 
-- Docker installed locally
-- Azure CLI (`az`) installed and logged in
-- `pynacl` (`pip install pynacl`), used to encrypt GitHub secrets
-- A `.env.deploy` file (see below)
+On your machine:
+
+- Docker, running
+- Azure CLI (`az`)
+- Python with `pynacl` (`pip install pynacl`), used to encrypt GitHub secrets
+
+In Azure, before anything below will work: a resource group, a container
+registry, a Linux App Service Plan, a Web App for Containers, a PostgreSQL
+Flexible Server, and an Azure OpenAI resource with model deployments. The next
+section provisions all of it.
+
+## First-time provisioning
+
+Everything here is idempotent enough to re-run, and each step ends by printing
+the value it produces for `.env.deploy`. Pick your own names; the shape below
+is what this project's own deployment uses.
+
+```bash
+# Names - change these
+export RG=my-rg
+export LOCATION=southcentralus
+export ACR=myregistry                 # 5-50 alphanumerics, globally unique
+export PLAN=my-asp
+export APP=my-webapp                  # becomes <APP>.azurewebsites.net, globally unique
+export PGSERVER=my-psql               # globally unique
+export PGDB=myapp_production
+export PGADMIN=pgadmin
+```
+
+### 1. Sign in
+
+```bash
+az login
+az account set --subscription "<your subscription name or id>"
+az account show --query id -o tsv          # -> AZURE_SUBSCRIPTION_ID
+az group create -n $RG -l $LOCATION
+```
+
+### 2. Container registry
+
+The Basic SKU is enough. `rocketship.py` authenticates with a username and
+password rather than a token, so the admin user must be enabled.
+
+```bash
+az acr create -n $ACR -g $RG --sku Basic --admin-enabled true
+az acr credential show -n $ACR --query 'passwords[0].value' -o tsv
+#   -> ROCKETSHIP_REGISTRY_PASSWORD
+#   The username is the registry name; the server is <ACR>.azurecr.io.
+```
+
+### 3. App Service Plan and Web App
+
+The plan must be Linux (`--is-linux`). Sizing is yours to choose; a Basic B-tier
+is the smallest that supports Always On, which matters here — see the note at
+the end of this section.
+
+```bash
+az appservice plan create -n $PLAN -g $RG --is-linux --sku B3
+
+# Create the Web App against any placeholder image; rocketship.py repoints it
+# at your real image on the first deploy.
+az webapp create -n $APP -g $RG -p $PLAN \
+  --deployment-container-image-name mcr.microsoft.com/appsvc/staticsite:latest
+
+az webapp update -n $APP -g $RG --https-only true
+az webapp config set -n $APP -g $RG --always-on true
+```
+
+**Always On.** With it off, App Service unloads the container after roughly 20
+minutes idle, and the next request pays a full cold start — which for this app
+means booting the embedded LiteLLM proxy and running `sync_litellm_keys` before
+anything is served. Turn it on unless you are deliberately saving money on a
+plan that does not support it.
+
+### 4. PostgreSQL
+
+One server, one database. Django and LiteLLM share it — LiteLLM's Prisma tables
+are isolated in a separate schema (`LITELLM_DB_SCHEMA=litellm`), created by
+`prisma db push` on the first container boot, so you do not create it yourself.
+
+```bash
+az postgres flexible-server create -n $PGSERVER -g $RG -l $LOCATION \
+  --tier Burstable --sku-name Standard_B1ms --storage-size 32 --version 17 \
+  --admin-user $PGADMIN --admin-password '<a strong password>' \
+  --public-access None
+
+az postgres flexible-server db create -g $RG -s $PGSERVER -d $PGDB
+
+# Let App Service reach it. The 0.0.0.0 rule is Azure's "allow Azure services"
+# special case, not a literal address, and does not open the server to the
+# internet.
+az postgres flexible-server firewall-rule create -g $RG -n $PGSERVER \
+  --rule-name AllowAzureServices --start-ip-address 0.0.0.0 --end-ip-address 0.0.0.0
+```
+
+That gives you:
+
+```
+DATABASE_URL=postgres://<PGADMIN>:<password>@<PGSERVER>.postgres.database.azure.com:5432/<PGDB>?sslmode=require
+```
+
+`sslmode=require` is not optional — Flexible Server refuses plaintext.
+
+### 5. Azure OpenAI
+
+```bash
+az cognitiveservices account create -n my-openai -g $RG -l eastus \
+  --kind OpenAI --sku S0 --custom-domain my-openai
+
+az cognitiveservices account show -n my-openai -g $RG \
+  --query properties.endpoint -o tsv                      # -> AZURE_OPENAI_ENDPOINT
+az cognitiveservices account keys list -n my-openai -g $RG \
+  --query key1 -o tsv                                     # -> AZURE_OPENAI_API_KEY
+```
+
+Then create one deployment per model you intend to serve. **The deployment name
+must equal the name after `azure/` in `config/litellm-config.yaml`** — LiteLLM
+sends the deployment name to Azure, so a mismatch is a 404 at request time, not
+a startup error.
+
+```bash
+az cognitiveservices account deployment create -n my-openai -g $RG \
+  --deployment-name gpt-5 --model-name gpt-5 --model-version 2025-08-07 \
+  --model-format OpenAI --sku-name GlobalStandard --sku-capacity 100
+```
+
+To check an existing account against the config:
+
+```bash
+az cognitiveservices account deployment list -n my-openai -g $RG --query '[].name' -o tsv | sort > /tmp/live
+grep -E '^\s+model: azure/' config/litellm-config.yaml | sed 's|.*azure/||' | sort -u > /tmp/cfg
+comm -13 /tmp/live /tmp/cfg      # anything printed is declared but not deployed
+```
+
+Every deployment in `config/litellm-config.yaml` also sets
+`model_info.base_model` to a key in LiteLLM's price map. Keep that accurate or
+spend tracking — and therefore every budget — silently reads zero.
+
+### 6. Authentication
+
+This is the step that decides whether the app is safe to expose.
+
+`chat/middleware.py` trusts the `X-MS-CLIENT-PRINCIPAL-NAME` header and logs in
+(or creates) whatever user it names. That is only sound when App Service
+Authentication is enabled, because the platform then strips any client-supplied
+copy of that header and sets its own. Turn it on:
+
+```bash
+az webapp auth microsoft update -n $APP -g $RG \
+  --client-id <app registration client id> \
+  --client-secret <client secret> \
+  --issuer https://login.microsoftonline.com/<tenant id>/v2.0 \
+  --yes
+az webapp auth update -n $APP -g $RG --enabled true \
+  --action RedirectToLoginPage --redirect-provider azureactivedirectory
+```
+
+Verify it. Note that `az webapp auth show` can report the whole block as null
+even when authentication is active; read the config resource directly instead:
+
+```bash
+az resource show --ids "/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$RG/providers/Microsoft.Web/sites/$APP/config/authsettingsV2" \
+  --query 'properties.{platformEnabled:platform.enabled, requireAuth:globalValidation.requireAuthentication}' -o json
+```
+
+You want `platformEnabled: true` and `requireAuth: true`.
+
+**If you are not turning authentication on**, you must set
+`EASYAUTH_ENABLED=false` in `.env.deploy`. Left unset, `settings.py` infers it
+from `WEBSITE_HOSTNAME`, which App Service always sets — so the header would be
+trusted while nothing is stripping it, and anyone could sign in as anyone.
+
+### 7. Secrets you generate yourself
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(50))"   # -> SECRET_KEY
+python -c "import secrets; print(secrets.token_urlsafe(32))"   # -> LITELLM_MASTER_KEY
+```
+
+`LITELLM_MASTER_KEY` authenticates both the proxy's admin API and Django's calls
+into it. Any opaque string works; the `sk-` prefix often shown in LiteLLM's docs
+is a convention, not a requirement.
+
+`DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD` seed a Django superuser
+through migration `0002`, but only on a database with no user at that address —
+so set them before the first deploy or create the superuser by hand later.
+
+### 8. GitHub token (optional)
+
+Only needed if you want `rocketship.py` to push GitHub Actions secrets for the
+CI path. A classic PAT with the `repo` scope, or a fine-grained token with
+read/write on **Secrets** for the repository. Set it as `GITHUB_TOKEN` in
+`.env.deploy`; it is never uploaded to Azure.
+
+For CI to deploy as well as build, add two repository secrets by hand:
+`AZURE_WEBAPP_NAME` (your `$APP`) and `AZURE_WEBAPP_PUBLISH_PROFILE`, from:
+
+```bash
+az webapp deployment list-publishing-profiles -n $APP -g $RG --xml
+```
+
+Without them the workflow builds and pushes the image but never repoints the
+Web App.
+
+### 9. Point the repo at your resources
+
+Edit `config/azure-deploy.yml` — `image`, `registry.server`, `registry.username`,
+`github.repo`, `app_service.app_name`, `app_service.resource_group`, and
+`CUSTOM_HOSTNAME` under `additional_env` — to match what you just created. The
+`${VAR}` placeholders resolve from `.env.deploy` and should be left alone.
 
 ## The two env files
 
@@ -70,11 +276,10 @@ container has no use for a subscription id or a registry password, and shipping
 them puts them in configuration that anyone with read access can see. The deploy
 prints which names it dropped.
 
-`OPENAI_API_KEY` is deliberately **not** on that list: in this project it is a
-live fallback for `LITELLM_SERVICE_KEY` (`aistarterkit/settings.py`), so the
-deployed app really does read it. The `AZURE_OPENAI_*` and `LITELLM_*`
-credentials are load-bearing for the same reason — the embedded proxy resolves
-them from the environment at boot via `config/litellm-config.yaml`.
+The `AZURE_OPENAI_*`, `OPENAI_API_VERSION` and `LITELLM_MASTER_KEY` values are
+deliberately **not** on that list and must not be: the embedded proxy resolves
+them from the environment at boot, through the `os.environ/...` references in
+`config/litellm-config.yaml`.
 
 The registry credentials the GitHub Actions workflow needs
 (`ROCKETSHIP_REGISTRY_SERVER`/`USERNAME`/`PASSWORD`, `ROCKETSHIP_IMAGE`) are
@@ -177,22 +382,38 @@ LiteLLM's Prisma tables isolated in the `litellm` schema
 (`/home/backups`, which `rocketship.py download`/`upload` read and write) and
 for anything else that must outlive a container.
 
-## Quick Start
+## Deploying, end to end
 
-1. Create `.env.deploy` with the production settings and the deploy credentials:
+Assuming the provisioning above is done:
+
+1. Write `.env.deploy` (gitignored; `chmod 600` it):
 
    ```
+   # Deploy credentials - filtered out before upload
    AZURE_SUBSCRIPTION_ID=...
    ROCKETSHIP_REGISTRY_PASSWORD=...
-   GITHUB_TOKEN=...            # optional, only for pushing GitHub secrets
+   GITHUB_TOKEN=...                  # optional
 
+   # Django
    SECRET_KEY=...
-   DATABASE_URL=postgres://...@...postgres.database.azure.com:5432/...?sslmode=require
-   AZURE_OPENAI_ENDPOINT=...
+   DATABASE_URL=postgres://user:pass@host.postgres.database.azure.com:5432/db?sslmode=require
+   DEFAULT_ADMIN_EMAIL=...
+   DEFAULT_ADMIN_PASSWORD=...
+   #EASYAUTH_ENABLED=false           # REQUIRED if App Service Authentication is off
+
+   # Azure OpenAI - read from the environment by config/litellm-config.yaml
+   AZURE_OPENAI_ENDPOINT=https://<name>.openai.azure.com
    AZURE_OPENAI_API_KEY=...
+   OPENAI_API_VERSION=v1
+
+   # LiteLLM
    LITELLM_MASTER_KEY=...
-   LITELLM_SERVICE_KEY=...
    ```
+
+   Anything `config/azure-deploy.yml` pins in `additional_env` (`ENVIRONMENT`,
+   `WEBSITES_PORT`, `CONFIG_FILE_PATH`, `LITELLM_DB_SCHEMA`,
+   `LITELLM_ENABLE_VIRTUAL_KEYS`, `LITELLM_PROXY_BASE_URL`) does not belong
+   here — that file wins on conflicts.
 
 2. Deploy:
 
@@ -200,8 +421,55 @@ for anything else that must outlive a container.
    python rocketship.py deploy
    ```
 
-3. For subsequent deploys, push to `main` (or re-run `deploy`):
+   It prints which names it declined to upload. The first boot is slow: it runs
+   `prisma db push` to create the `litellm` schema, Django's migrations,
+   `collectstatic`, and then `sync_litellm_keys`.
+
+3. Verify, in this order:
+
+   ```bash
+   # a. the container came up and both halves are healthy
+   curl -s https://$APP.azurewebsites.net/health/
+
+   # b. watch the boot if it did not
+   python rocketship.py logs
+
+   # c. the proxy is serving the models you deployed
+   curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+     https://$APP.azurewebsites.net/litellm/model/info | head -c 400
+   ```
+
+   `/health/` returns 200 for healthy or degraded and 503 for unhealthy, and
+   names which check failed. Then open the site: you should be redirected to
+   your identity provider, and land on `/chat/settings/` with a virtual key
+   issued.
+
+4. Subsequent deploys — push to `main`, or re-run `rocketship.py deploy`:
 
    ```bash
    git push origin main
    ```
+
+## Operational notes
+
+- **App settings are only ever set, never deleted.** Removing a variable from
+  `.env.deploy` leaves the old value on the Web App. Delete it explicitly:
+
+  ```bash
+  az webapp config appsettings delete -n $APP -g $RG --setting-names FOO BAR
+  ```
+
+- **`LITELLM_PRISMA_ACCEPT_DATA_LOSS` is a one-boot flag.** `entrypoint.sh` runs
+  `prisma db push` without `--accept-data-loss` so that a LiteLLM schema change
+  which would drop columns fails the boot instead of destroying the key and
+  spend tables. Set it to `true` for the single boot that applies such an
+  upgrade, then **remove it again**. Left on permanently it silently re-arms
+  that failure mode for every future LiteLLM version bump.
+
+- **The ~230s front door.** App Service times out non-streaming responses at
+  about 230 seconds regardless of the 900s proxy and Gunicorn timeouts. Long
+  completions must be streamed.
+
+- **Worker recycling is off by default.** With a single worker, a recycle
+  restarts the embedded LiteLLM proxy and drops realtime sockets and in-flight
+  streams. `GUNICORN_MAX_REQUESTS` opts back in.

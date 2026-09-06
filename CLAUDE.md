@@ -98,7 +98,8 @@ Never put a production `DATABASE_URL` in `.env` — `settings.py` loads it, so a
 bare `manage.py` run would connect to Azure. See `docs/DEPLOYMENT.md`.
 
 - `DATABASE_URL` — PostgreSQL connection string
-- `LITELLM_MASTER_KEY`, `LITELLM_SERVICE_KEY` — LiteLLM authentication
+- `LITELLM_MASTER_KEY` — authenticates both the proxy's own admin API and Django's
+  calls into it (`litellm_keys.master_headers()`)
 - `LITELLM_PROXY_BASE_URL` — LiteLLM management endpoint used by Django (default `http://localhost:8000/litellm`)
 - `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` — Azure OpenAI credentials
 - `ENVIRONMENT` — Controls DEBUG mode and security settings

@@ -611,10 +611,9 @@ exit 0
 #: the container it pulled - readable by anyone who can read the configuration,
 #: and for no reason, because the running app never asks for it.
 #:
-#: Note what is deliberately NOT here: OPENAI_API_KEY. In this project it is a
-#: live fallback for LITELLM_SERVICE_KEY (aistarterkit/settings.py), so the
-#: deployed app really does read it. The Azure/LiteLLM credentials are likewise
-#: load-bearing - the proxy resolves them from the environment at boot.
+#: The Azure and LiteLLM credentials are NOT here and must not be: the embedded
+#: proxy resolves AZURE_OPENAI_*, OPENAI_API_VERSION and LITELLM_MASTER_KEY from
+#: the environment at boot, via os.environ/... in config/litellm-config.yaml.
 NOT_FOR_DEPLOYMENT = (
     "GITHUB_TOKEN",
     "ROCKETSHIP_",
