@@ -126,7 +126,6 @@ def developer_settings(request):
             "budget_source": budget_source,
             "budget_duration": getattr(settings, "LITELLM_KEY_BUDGET_DURATION", ""),
             "allowed_models": litellm_keys.models_for(request.user),
-            "default_model": _default_model_for(request.user),
             "snippets": _quickstart_snippets(litellm_api_base, litellm_key or "sk-...", _default_model_for(request.user)),
         },
     )

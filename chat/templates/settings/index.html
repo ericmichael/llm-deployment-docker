@@ -98,7 +98,6 @@
         <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent" class="border-b-2 px-1 pb-3 text-sm font-medium">Python</a>
         <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent" class="border-b-2 px-1 pb-3 text-sm font-medium">JavaScript</a>
         <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent" class="border-b-2 px-1 pb-3 text-sm font-medium">curl</a>
-        <a href="#" data-tabs-target="tab" data-action="click->tabs#change:prevent" class="border-b-2 px-1 pb-3 text-sm font-medium">Omni Code</a>
       </nav>
     </div>
 
@@ -114,20 +113,6 @@
 
     <div data-tabs-target="panel" class="hidden px-6 py-5">
       {% include "settings/_snippet.html" with code=snippets.curl %}
-    </div>
-
-    <div data-tabs-target="panel" class="hidden px-6 py-5">
-      <p class="text-sm text-gray-600">
-        <a href="https://ericmichael.github.io/omni-desktop/" target="_blank" rel="noopener noreferrer" class="font-medium text-indigo-600 hover:text-indigo-800">Download Omni Code</a>,
-        then during onboarding choose <strong>OpenAI-Compatible</strong> as the provider and enter:
-      </p>
-      <dl class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-3">
-        <dt class="text-gray-500">Base URL</dt><dd class="font-mono text-gray-900 sm:col-span-2">{{ litellm_api_base }}</dd>
-        <dt class="text-gray-500">API key</dt><dd class="text-gray-900 sm:col-span-2">the key above (use Copy)</dd>
-        <dt class="text-gray-500">Model ID</dt><dd class="font-mono text-gray-900 sm:col-span-2">{{ default_model }}</dd>
-        <dt class="text-gray-500">Max input tokens</dt><dd class="font-mono text-gray-900 sm:col-span-2">272000</dd>
-        <dt class="text-gray-500">Max output tokens</dt><dd class="font-mono text-gray-900 sm:col-span-2">128000</dd>
-      </dl>
     </div>
   </div>
   {% elif not error_message %}
