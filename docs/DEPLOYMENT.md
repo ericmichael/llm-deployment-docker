@@ -369,18 +369,44 @@ secrets. A failure aborts rather than retrying key-by-key.
    profile). Without it the step is skipped and the new image is built but never
    deployed; use `python rocketship.py deploy` instead.
 
-## Persistent Storage
+## Storage
 
-`WEBSITES_ENABLE_APP_SERVICE_STORAGE: true` in `additional_env` mounts a
-persistent volume at `/home` that survives container restarts, redeployments and
-scaling events.
+`WEBSITES_ENABLE_APP_SERVICE_STORAGE` is **`false`**. `/home` inside the app
+container is ephemeral: it does not survive a restart, a redeploy, or a move
+between instances. Do not put anything there you expect to find later.
 
-Application state does **not** live there. Django and LiteLLM share an Azure
-Database for PostgreSQL Flexible Server, addressed by `DATABASE_URL`, with
-LiteLLM's Prisma tables isolated in the `litellm` schema
-(`LITELLM_DB_SCHEMA=litellm`). `/home` is used for ad-hoc backups
-(`/home/backups`, which `rocketship.py download`/`upload` read and write) and
-for anything else that must outlive a container.
+Nothing needs it. All application state is in PostgreSQL — Django's tables in
+the default schema and LiteLLM's Prisma tables in the `litellm` schema of the
+same database (`LITELLM_DB_SCHEMA=litellm`), reached through `DATABASE_URL`.
+Static files are baked into the image by `collectstatic` at build time.
+
+Turning the flag on mounts an Azure Files share at `/home` instead, which
+persists but adds network-filesystem latency to every read the container makes
+there. Only do it if something actually needs to outlive the container, and
+expect the switch itself to change how the container starts.
+
+### Backups, and the Kudu filesystem
+
+`rocketship.py download` and `upload` do **not** talk to the app container.
+They use the Kudu (SCM) site's VFS API, which is a separate container with its
+own `/home`, always backed by persistent storage regardless of the flag above.
+So a file you upload is not visible to the running application, and vice versa.
+Kudu is a place to park a database dump you are moving between machines, not a
+shared volume.
+
+Two things about that API are worth recording, because both were wrong in this
+script until they were fixed:
+
+- The VFS root **is** `/home`. `/api/vfs/backups/` is `/home/backups`;
+  `/api/vfs/home/backups/` means `/home/home/backups` and 404s.
+- `az webapp deployment list-publishing-credentials --query '[a, b]' -o tsv`
+  separates the two values with a **newline**, not a tab.
+
+To take a database backup, run `pg_dump` against `DATABASE_URL` from wherever
+you have network access to the server — the App Service firewall rule permits
+Azure services, so `python rocketship.py ssh` and dumping from inside the
+container works, as does dumping from a machine you have added a firewall rule
+for.
 
 ## Deploying, end to end
 

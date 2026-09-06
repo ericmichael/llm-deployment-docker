@@ -8,7 +8,7 @@ It handles:
 - GitHub Actions secrets management
 - Azure App Service configuration with sidecar containers
 - Remote access to the running container
-- Backup download/upload from persistent storage
+- Backup download/upload via the Kudu (SCM) filesystem
 
 Usage:
     python rocketship.py init              # Create starter config and .rocketship/
@@ -440,7 +440,10 @@ def init():
                 "app_name": "${AZURE_APP_NAME}",
                 "resource_group": "${AZURE_RESOURCE_GROUP}",
                 "additional_env": {
-                    "WEBSITES_ENABLE_APP_SERVICE_STORAGE": "true",
+                    # "true" mounts an Azure Files share at /home, which
+                    # persists but adds network-filesystem latency. Leave it
+                    # off unless something must outlive the container.
+                    "WEBSITES_ENABLE_APP_SERVICE_STORAGE": "false",
                     "WEBSITES_PORT": "80",
                     "WEBSITES_CONTAINER_START_TIME_LIMIT": "300",
                 },
@@ -927,8 +930,21 @@ def restart():
         exit(1)
 
 
+def _vfs(remote_path):
+    """Map an absolute container path onto Kudu's VFS, whose root is /home.
+
+    "/api/vfs/home/backups/x" resolves to /home/home/backups/x and 404s; the
+    correct URL is "/api/vfs/backups/x".
+    """
+    return remote_path[len("/home"):] if remote_path.startswith("/home/") else remote_path
+
+
 def download(filename=None):
-    """Download a file from Azure App Service persistent storage (/home)."""
+    """Download a file from the Kudu (SCM) filesystem.
+
+    This is NOT the app container's filesystem - Kudu is a separate container
+    with its own /home, so files here are not visible to the running app.
+    """
     azure = get_azure_config()
     app_name = azure["app_service"]["app_name"]
     resource_group = azure["app_service"]["resource_group"]
@@ -957,7 +973,10 @@ def download(filename=None):
                 text=True,
                 check=True,
             )
-            creds = result.stdout.strip().split("\t")
+            # `az ... --query '[a, b]' -o tsv` separates the two values with a
+            # newline, not a tab. Splitting on "\t" always yielded one element,
+            # so this branch failed for every invocation.
+            creds = result.stdout.strip().splitlines()
             if len(creds) != 2:
                 print("Error: Could not get publishing credentials")
                 exit(1)
@@ -965,7 +984,7 @@ def download(filename=None):
             username, password = creds
 
             # Download via Kudu VFS API
-            kudu_url = f"https://{app_name}.scm.azurewebsites.net/api/vfs{remote_path}"
+            kudu_url = f"https://{app_name}.scm.azurewebsites.net/api/vfs{_vfs(remote_path)}"
 
             response = requests.get(
                 kudu_url,
@@ -1011,7 +1030,10 @@ def download(filename=None):
                 text=True,
                 check=True,
             )
-            creds = result.stdout.strip().split("\t")
+            creds = result.stdout.strip().splitlines()
+            if len(creds) != 2:
+                print("Error: Could not get publishing credentials")
+                exit(1)
             username, password = creds
             list_backups_remote(app_name, username, password)
         except subprocess.CalledProcessError as e:
@@ -1021,7 +1043,7 @@ def download(filename=None):
 
 def list_backups_remote(app_name, username, password):
     """List backup files in /home/backups on Azure."""
-    kudu_url = f"https://{app_name}.scm.azurewebsites.net/api/vfs/home/backups/"
+    kudu_url = f"https://{app_name}.scm.azurewebsites.net/api/vfs/backups/"
 
     try:
         response = requests.get(kudu_url, auth=(username, password))
@@ -1052,7 +1074,10 @@ def list_backups_remote(app_name, username, password):
 
 
 def upload(local_file, remote_filename=None):
-    """Upload a file to Azure App Service persistent storage (/home/backups)."""
+    """Upload a file to /home/backups on the Kudu (SCM) filesystem.
+
+    Not visible to the running app; see download().
+    """
     azure = get_azure_config()
     app_name = azure["app_service"]["app_name"]
     resource_group = azure["app_service"]["resource_group"]
@@ -1082,15 +1107,18 @@ def upload(local_file, remote_filename=None):
             text=True,
             check=True,
         )
-        creds = result.stdout.strip().split("\t")
+        creds = result.stdout.strip().splitlines()
+        if len(creds) != 2:
+            print("Error: Could not get publishing credentials")
+            exit(1)
         username, password = creds
 
         # Ensure /home/backups directory exists
-        kudu_dir_url = f"https://{app_name}.scm.azurewebsites.net/api/vfs/home/backups/"
+        kudu_dir_url = f"https://{app_name}.scm.azurewebsites.net/api/vfs/backups/"
         requests.put(kudu_dir_url, auth=(username, password))
 
         # Upload via Kudu VFS API
-        kudu_url = f"https://{app_name}.scm.azurewebsites.net/api/vfs{remote_path}"
+        kudu_url = f"https://{app_name}.scm.azurewebsites.net/api/vfs{_vfs(remote_path)}"
 
         with open(local_file, "rb") as f:
             response = requests.put(

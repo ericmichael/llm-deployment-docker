@@ -15,7 +15,12 @@ azure:
       DATABASE_URL: ${DATABASE_URL}
       WEBSITES_CONTAINER_START_TIME_LIMIT: 500
       CUSTOM_HOSTNAME: rgvaiclass.com
-      WEBSITES_ENABLE_APP_SERVICE_STORAGE: true
+      # Off. /home in the app container is ephemeral; nothing this app owns
+      # lives there - Django and LiteLLM share the Postgres server, and
+      # LiteLLM's tables sit in the `litellm` schema of the same database.
+      # Quoted so YAML keeps the literal string App Service stores, rather
+      # than Python's "False" - otherwise every deploy shows a spurious diff.
+      WEBSITES_ENABLE_APP_SERVICE_STORAGE: "false"
       WEBSITES_PORT: 8000
       ENVIRONMENT: production
       CONFIG_FILE_PATH: /usr/src/app/config/litellm-config.yaml
