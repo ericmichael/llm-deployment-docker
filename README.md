@@ -26,8 +26,10 @@ Django and a LiteLLM proxy run **in one process** behind a single ASGI router
 
 ## Features
 
-- **Email-based auth** (`CustomUser`, no username), with optional Azure App
-  Service Easy Auth via `chat/middleware.py`
+- **Institutional sign-in** through Azure App Service Easy Auth
+  (`chat/middleware.py`), which is how production authenticates — accounts are
+  created on first sign-in with an unusable password. `CustomUser` is
+  email-based with no username field
 - **Per-user LiteLLM virtual keys**, provisioned on first visit to the settings
   page, renewed on expiry, and rotatable by the student ("Regenerate key")
 - **Budgets** resolved user → course → global, reset per calendar month, with

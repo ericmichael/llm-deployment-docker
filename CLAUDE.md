@@ -103,6 +103,6 @@ bare `manage.py` run would connect to Azure. See `docs/DEPLOYMENT.md`.
 - `LITELLM_PROXY_BASE_URL` — LiteLLM management endpoint used by Django (default `http://localhost:8000/litellm`)
 - `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` — Azure OpenAI credentials
 - `ENVIRONMENT` — Controls DEBUG mode and security settings
-- `EASYAUTH_ENABLED` — Defaults to on when `WEBSITE_HOSTNAME` is set; set to `false` on any App Service that does not have Authentication turned on (otherwise the `X-MS-CLIENT-PRINCIPAL-NAME` header is client-controlled)
+- `EASYAUTH_ENABLED` — leave unset. App Service Authentication is required in production, and the default (on when `WEBSITE_HOSTNAME` is set, off locally) is correct for both. `false` is only for an App Service deliberately run without Authentication, where trusting `X-MS-CLIENT-PRINCIPAL-NAME` would let anyone sign in as anyone. Easy Auth must exclude `/v1/*`, `/litellm/*` and `/health/*`, or student API calls and the health probe get a login redirect
 - `LITELLM_PRISMA_ACCEPT_DATA_LOSS` — `entrypoint.sh` runs `prisma db push` without `--accept-data-loss`; set `true` for one boot to apply a LiteLLM schema change that drops columns
 - `GUNICORN_MAX_REQUESTS` — Worker recycling, off by default (a recycle restarts the embedded LiteLLM proxy)

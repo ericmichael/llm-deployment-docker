@@ -176,12 +176,18 @@ spend tracking — and therefore every budget — silently reads zero.
 
 ### 6. Authentication
 
-This is the step that decides whether the app is safe to expose.
+**App Service Authentication is required.** This app is built for a university
+tenant: students sign in with their institutional account, and the app has no
+password login worth using in production — accounts are created on first sign-in
+with an unusable password.
 
-`chat/middleware.py` trusts the `X-MS-CLIENT-PRINCIPAL-NAME` header and logs in
-(or creates) whatever user it names. That is only sound when App Service
-Authentication is enabled, because the platform then strips any client-supplied
-copy of that header and sets its own. Turn it on:
+It is also load-bearing for security. `chat/middleware.py` trusts the
+`X-MS-CLIENT-PRINCIPAL-NAME` header and logs in, or creates, whatever user it
+names. That is sound only because the platform strips any client-supplied copy
+of that header and sets its own. Without Easy Auth in front, that header is
+attacker-controlled.
+
+Register an app in your tenant, then point the Web App at it:
 
 ```bash
 az webapp auth microsoft update -n $APP -g $RG \
@@ -193,20 +199,55 @@ az webapp auth update -n $APP -g $RG --enabled true \
   --action RedirectToLoginPage --redirect-provider azureactivedirectory
 ```
 
-Verify it. Note that `az webapp auth show` can report the whole block as null
-even when authentication is active; read the config resource directly instead:
+#### Exclude the API paths — do not skip this
+
+With `requireAuth` on, App Service challenges *every* request, including the
+OpenAI-compatible calls students make with their virtual keys. Those carry an
+API key, not a session cookie, so they would be answered with a redirect to a
+login page and the product would not work at all. Exclude them:
+
+```bash
+az webapp auth update -n $APP -g $RG \
+  --excluded-paths "[/v1/*,/litellm/*,/health/*]"
+```
+
+- `/v1/*` and `/litellm/*` are authenticated by LiteLLM's own virtual keys.
+  Easy Auth has no business in front of them.
+- `/health/*` must answer the platform health probe unauthenticated, or the
+  probe reads the login redirect as a failed check.
+
+Everything else — the settings page, the roster, the usage dashboard, the
+Django admin — stays behind Easy Auth.
+
+#### Verify
+
+`az webapp auth show` can report the whole block as null even when
+authentication is active. Read the config resource directly:
 
 ```bash
 az resource show --ids "/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$RG/providers/Microsoft.Web/sites/$APP/config/authsettingsV2" \
-  --query 'properties.{platformEnabled:platform.enabled, requireAuth:globalValidation.requireAuthentication}' -o json
+  --query 'properties.{platformEnabled:platform.enabled, requireAuth:globalValidation.requireAuthentication, excluded:globalValidation.excludedPaths}' -o json
 ```
 
-You want `platformEnabled: true` and `requireAuth: true`.
+You want `platformEnabled: true`, `requireAuth: true`, and the three excluded
+paths. Then check the behaviour end to end, which is what actually matters:
 
-**If you are not turning authentication on**, you must set
-`EASYAUTH_ENABLED=false` in `.env.deploy`. Left unset, `settings.py` infers it
-from `WEBSITE_HOSTNAME`, which App Service always sets — so the header would be
-trusted while nothing is stripping it, and anyone could sign in as anyone.
+```bash
+# a Django page: rejected, and a LiteLLM key does not help
+curl -s -o /dev/null -w '%{http_code}\n' https://$APP.azurewebsites.net/chat/settings/     # 401
+
+# a forged principal header: rejected before Django ever sees it
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "X-MS-CLIENT-PRINCIPAL-NAME: attacker@example.com" \
+  https://$APP.azurewebsites.net/chat/settings/                                            # 401
+
+# the API path: reachable, and authenticated by the key rather than the session
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" https://$APP.azurewebsites.net/v1/models   # 200
+```
+
+The second of those is the one worth re-running after any change to the auth
+configuration: it is the direct test that the header cannot be forged.
 
 ### 7. Secrets you generate yourself
 
@@ -314,18 +355,21 @@ at deploy time, so no credential is written into this file. Values in
 
 ### EASYAUTH_ENABLED
 
-`additional_env` carries `EASYAUTH_ENABLED: ${EASYAUTH_ENABLED}`. Left empty the
-setting is skipped rather than pushed, and `settings.py` decides from
-`WEBSITE_HOSTNAME` — which App Service always sets, so Easy Auth is **on** by
-default.
+`additional_env` carries `EASYAUTH_ENABLED: ${EASYAUTH_ENABLED}`, and it should
+stay empty. Empty means the setting is skipped rather than pushed, so
+`settings.py` infers it from `WEBSITE_HOSTNAME` — which App Service always sets
+— and header trust is on, which is what you want on a Web App with Easy Auth in
+front. Locally `WEBSITE_HOSTNAME` is unset, so the same default turns it off and
+you log in with a password.
 
-Set `EASYAUTH_ENABLED=false` in `.env.deploy` on any Web App where App Service
-Authentication is **not** turned on. There the `X-MS-CLIENT-PRINCIPAL-NAME`
-header is client-controlled, and trusting it lets anyone sign in as anyone.
+The `false` value exists for one case: an App Service where you have chosen not
+to enable Authentication. That is not a supported production configuration for
+this app — the middleware would trust a header nothing is stripping — but if you
+stand up a staging slot without auth, set it there.
 
-Note that an empty value is *skipped*, not *cleared*: to turn Easy Auth off you
-must set a literal `false`, and to remove a setting entirely you have to delete
-it in the portal or with `az webapp config appsettings delete`.
+An empty value is *skipped*, not *cleared*. So `false` must be literal, and
+removing the setting once pushed takes
+`az webapp config appsettings delete`.
 
 ## rocketship.py commands
 
