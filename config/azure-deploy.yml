@@ -24,3 +24,11 @@ azure:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       LITELLM_PROXY_BASE_URL: http://localhost:8000/litellm
       DISABLE_ADMIN_UI: true
+      # Identity comes from App Service Authentication. Left empty this setting
+      # is skipped rather than pushed, and settings.py decides from
+      # WEBSITE_HOSTNAME - which App Service always sets, so Easy Auth is ON by
+      # default. Set EASYAUTH_ENABLED=false in .env.deploy on any Web App where
+      # Authentication is NOT turned on: there the X-MS-CLIENT-PRINCIPAL-NAME
+      # header is client-controlled, and trusting it lets anyone sign in as
+      # anyone.
+      EASYAUTH_ENABLED: ${EASYAUTH_ENABLED}

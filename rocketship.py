@@ -23,22 +23,23 @@ Usage:
 Prerequisites:
     - Docker installed
     - Azure CLI (`az`) installed and logged in
-    - GitHub personal access token (GITHUB_TOKEN env var) - optional
+    - A `.env.deploy` holding the production settings and the deploy
+      credentials (registry password, subscription id, GitHub token).
+      `.env` is for local development and is never read here.
+    - GitHub personal access token (GITHUB_TOKEN in .env.deploy) - optional
     - pynacl package (`pip install pynacl`)
 """
 
-from dotenv import load_dotenv, dotenv_values
-
-load_dotenv()
-
 import argparse
-import subprocess
-import yaml
 import os
 import re
-import requests
 import shutil
+import subprocess
 from base64 import b64encode
+
+import requests
+import yaml
+from dotenv import dotenv_values, load_dotenv
 
 try:
     from nacl import encoding, public
@@ -46,6 +47,17 @@ except ImportError:
     print("Error: The 'nacl' library is required for this script.")
     print("You can install it with 'pip install pynacl'.")
     exit(1)
+
+# `.env.deploy` and nothing else. `.env` belongs to the local dev server, and
+# this script reaching into it was the source of two separate problems: `.env`
+# carried the production DATABASE_URL, so every `manage.py` run outside docker
+# compose opened a connection to the Azure database; and everything in `.env`
+# was uploaded as an App Service setting, so local-only values shipped
+# straight to production, alongside deploy credentials the running app never
+# reads.
+#
+# One file, and it says exactly what production gets.
+load_dotenv(".env.deploy")
 
 
 def azure_login():
@@ -138,22 +150,14 @@ def update_app_settings(azure, additional_env):
                 text=True,
             )
             if result.returncode != 0:
-                # Fall back to individual settings if JSON fails
-                print(f"      (JSON method failed: {result.stderr.strip()})")
-                print("      Trying individual settings...")
-                for k, v in additional_env.items():
-                    if v:
-                        subprocess.run(
-                            [
-                                "az", "webapp", "config", "appsettings", "set",
-                                "--name", app_name,
-                                "--resource-group", resource_group,
-                                "--settings", f"{k}={v}",
-                                "--subscription", subscription,
-                            ],
-                            capture_output=True,
-                            check=True,
-                        )
+                # Deliberately no per-setting retry. These values are secrets,
+                # and passing them as arguments puts every one of them in the
+                # process table where any user on the host can read them with
+                # `ps`. The retry also used check=True inside a try that only
+                # prints, so a failure part-way left half the settings pushed.
+                print("      Error setting Azure app settings.")
+                print(f"        {result.stderr.strip()}")
+                return False
         finally:
             os.unlink(temp_file)
         return True
@@ -221,18 +225,18 @@ def configure_sidecars(azure, sidecars, registry):
             )
 
             if result.returncode != 0:
-                print(f"      ✗ Error configuring sidecars")
+                print("      ✗ Error configuring sidecars")
                 print(f"        {result.stderr}")
                 return False
 
-            print(f"      ✓ Sidecars configured")
+            print("      ✓ Sidecars configured")
             return True
 
         finally:
             os.unlink(spec_file)
 
     except subprocess.CalledProcessError as e:
-        print(f"      ✗ Error configuring sidecars")
+        print("      ✗ Error configuring sidecars")
         print(f"        {e}")
         return False
 
@@ -458,13 +462,8 @@ def init():
 # This script is sourced on SSH login to set up the environment.
 # Customize this file for your project's needs.
 
-# Example: Ruby/Bundler configuration (uncomment for Rails apps)
-# export BUNDLE_PATH=/usr/local/bundle
-# export BUNDLE_WITHOUT=development
-# export RAILS_ENV=production
-
 # Change to application directory
-cd /rails
+cd /usr/src/app
 
 # Source Azure environment variables saved by startup script
 if [ -f /home/rocketship-env ]; then
@@ -478,7 +477,7 @@ fi
     print("Created .rocketship/profile.sh")
 
     # Create .rocketship/motd
-    motd = '''
+    motd = r'''
   ____            _        _       _     _
  |  _ \ ___   ___| | _____| |_ ___| |__ (_)_ __
  | |_) / _ \ / __| |/ / _ \ __/ __| '_ \| | '_ \
@@ -504,21 +503,22 @@ set -e
 # Export environment variables for SSH sessions
 # Azure injects env vars only into the main process, so we save them for SSH access
 # Customize the grep pattern to match your app's environment variable prefixes
-env | grep -E '^(RAILS_|SECRET_|DATABASE_|REDIS_|WEBSITES_)' > /home/rocketship-env 2>/dev/null || true
+env | grep -E '^(ENVIRONMENT|SECRET_|DATABASE_|LITELLM_|AZURE_OPENAI_|OPENAI_|EASYAUTH_|WEBSITES_)' > /home/rocketship-env 2>/dev/null || true
 chmod 644 /home/rocketship-env
 
 # Start SSH service (required for Azure App Service SSH access)
 service ssh start
 
 # Run pre-start hook if it exists
-if [ -x /rails/rocketship-hooks/pre-start ]; then
-    /rails/rocketship-hooks/pre-start
+if [ -x /usr/src/app/rocketship-hooks/pre-start ]; then
+    /usr/src/app/rocketship-hooks/pre-start
 fi
 
 # Start the application
-# Customize this command for your application
-cd /rails
-exec ./bin/rails server -b 0.0.0.0 -p 80
+cd /usr/src/app
+exec gunicorn aistarterkit.asgi:application \\
+    --bind 0.0.0.0:8000 \\
+    --worker-class uvicorn.workers.UvicornWorker
 '''
     with open(".rocketship/startup.sh", "w") as f:
         f.write(startup_sh)
@@ -537,11 +537,12 @@ exec ./bin/rails server -b 0.0.0.0 -p 80
 # Registry credentials (from environment)
 ROCKETSHIP_REGISTRY_PASSWORD=$ROCKETSHIP_REGISTRY_PASSWORD
 
-# Example: Read secrets from 1password
-# RAILS_MASTER_KEY=$(op read "op://Vault/Item/field")
+# Example: read a secret from 1Password rather than keeping it in a file
+# SECRET_KEY=$(op read "op://Vault/Item/field")
 
-# Example: Read from file (never commit secrets to git!)
-# RAILS_MASTER_KEY=$(cat config/master.key 2>/dev/null || echo "")
+# Example: read from a file. Never commit one - .rocketship/ is gitignored
+# for exactly this reason.
+# SECRET_KEY=$(cat config/secret.key 2>/dev/null || echo "")
 '''
     with open(".rocketship/secrets", "w") as f:
         f.write(secrets)
@@ -583,7 +584,7 @@ exit 0
 # Remove the .sample extension to activate.
 
 # Example: Run database migrations
-# ./bin/rails db:migrate
+# python manage.py migrate
 
 exit 0
 '''
@@ -598,9 +599,50 @@ exit 0
     print("  1. Edit config/azure-deploy.yml with your Azure settings")
     print("  2. Edit .rocketship/profile.sh for your app's environment")
     print("  3. Edit .rocketship/startup.sh for your app's start command")
-    print("  4. Set up your .env with the required variables")
+    print("  4. Set up your .env.deploy with the production + deploy variables")
     print("  5. Update your Dockerfile to copy from .rocketship/")
     print("\nSee the generated files for examples and documentation.")
+
+
+#: Names that belong to a developer's machine or to the act of deploying, and
+#: never to the application that ends up running. Everything in .env.deploy is
+#: otherwise uploaded into the App Service configuration and the GitHub Actions
+#: secrets, which is how a registry password ends up sitting in the config of
+#: the container it pulled - readable by anyone who can read the configuration,
+#: and for no reason, because the running app never asks for it.
+#:
+#: Note what is deliberately NOT here: OPENAI_API_KEY. In this project it is a
+#: live fallback for LITELLM_SERVICE_KEY (aistarterkit/settings.py), so the
+#: deployed app really does read it. The Azure/LiteLLM credentials are likewise
+#: load-bearing - the proxy resolves them from the environment at boot.
+NOT_FOR_DEPLOYMENT = (
+    "GITHUB_TOKEN",
+    "ROCKETSHIP_",
+    # Which subscription and which Web App to deploy *to*. The app inside has
+    # no use for either.
+    "AZURE_SUBSCRIPTION_ID",
+    "AZURE_WEBAPP_NAME",
+)
+
+
+def _deployable_env(values: dict) -> dict:
+    """The `.env.deploy` entries that are app settings rather than tooling.
+
+    The file holds both: what the running app reads, and what this script needs
+    to talk to Azure and the registry. Only the first belongs in the App Service
+    configuration - a subscription id and a registry password are credentials
+    for the deploy, not for the thing deployed.
+    """
+    keep = {}
+    dropped = []
+    for name, value in values.items():
+        if any(name.startswith(prefix) for prefix in NOT_FOR_DEPLOYMENT):
+            dropped.append(name)
+            continue
+        keep[name] = value
+    if dropped:
+        print(f"      Not deploying (local or deploy-only): {', '.join(sorted(dropped))}")
+    return keep
 
 
 def load_config():
@@ -658,14 +700,14 @@ def validate_config(config):
 def setup(no_cache=False):
     """Run the full deployment setup."""
     print("=" * 60)
-    print("Rocketship - Azure Deployment for Rails")
+    print("Rocketship - Azure App Service deployment")
     print("=" * 60)
 
-    print("\n[1/8] Checking Docker...")
+    print("\n[1/7] Checking Docker...")
     check_docker()
     print("      ✓ Docker found")
 
-    print("[2/8] Checking Dockerfile...")
+    print("[2/7] Checking Dockerfile...")
     check_dockerfile()
     print("      ✓ Dockerfile found")
 
@@ -691,15 +733,17 @@ def setup(no_cache=False):
     github = config.get("github")
     github_token = os.getenv("GITHUB_TOKEN")
 
-    # Load environment variables from .env file
-    print("[6/7] Loading .env variables...")
-    env_variables = dotenv_values(".env")
+    print("[6/7] Loading .env.deploy variables...")
+    # Only this file. `.env` is the dev server's, and it must not hold a
+    # production DATABASE_URL either - every `manage.py` run outside docker
+    # compose would open a connection to Azure.
+    env_variables = _deployable_env(dotenv_values(".env.deploy"))
     print(f"      ✓ Loaded {len(env_variables)} variables")
 
     # Log into the registry and build/push image
     try:
         print(f'\n[7/7] Docker build & push to {registry["server"]}...')
-        print(f'      Logging into registry...')
+        print('      Logging into registry...')
         subprocess.run(
             [
                 "docker",
@@ -744,7 +788,7 @@ def setup(no_cache=False):
 
     # Push all tags to the registry
     try:
-        print(f'      Pushing to registry...')
+        print('      Pushing to registry...')
         for tag in tags:
             subprocess.run(["docker", "push", tag], check=True)
         print("      ✓ Image pushed")
@@ -756,7 +800,7 @@ def setup(no_cache=False):
     deploy_tag = f"{image_base}:{git_sha}" if git_sha else f"{image_base}:latest"
 
     # Create and push secrets to Github (optional)
-    print(f'\nConfiguring Azure (and GitHub if token provided)...')
+    print('\nConfiguring Azure (and GitHub if token provided)...')
     if has_github and github and github.get("repo"):
         print(f'      Pushing secrets to GitHub: {github["repo"]}')
         try:
@@ -788,7 +832,7 @@ def setup(no_cache=False):
                 else:
                     print("      ⚠ Sidecar configuration had issues")
 
-        print(f'      Pushing settings to Azure App Service...')
+        print('      Pushing settings to Azure App Service...')
         all_azure_secrets = {**env_variables, **azure["app_service"]["additional_env"]}
 
         # Merge sidecar env vars into app settings (they're shared with all containers)
@@ -875,8 +919,6 @@ def restart():
     """Restart the Azure App Service."""
     azure = get_azure_config()
     app_name = azure["app_service"]["app_name"]
-    resource_group = azure["app_service"]["resource_group"]
-    subscription = azure["subscription"]
 
     print(f"Restarting {app_name}...")
     if restart_app_service(azure):
@@ -985,7 +1027,7 @@ def list_backups_remote(app_name, username, password):
     try:
         response = requests.get(kudu_url, auth=(username, password))
         if response.status_code == 404:
-            print("No backups directory found. Run 'bin/rails db:backup:export' first.")
+            print("No backups directory found - nothing has written to /home/backups yet.")
             return
 
         response.raise_for_status()
@@ -995,7 +1037,7 @@ def list_backups_remote(app_name, username, password):
 
         if not backups:
             print("No backup files found in /home/backups/")
-            print("Run 'bin/rails db:backup:export' in the container to create one.")
+            print("Create one in the container, e.g. pg_dump \"$DATABASE_URL\" | gzip > /home/backups/backup-$(date +%F).sql.gz")
             return
 
         print("\nAvailable backups:")
@@ -1003,7 +1045,7 @@ def list_backups_remote(app_name, username, password):
             size_kb = backup.get("size", 0) / 1024
             print(f"  {backup['name']}  ({size_kb:.2f} KB)")
 
-        print(f"\nTo download, run:")
+        print("\nTo download, run:")
         print(f"  python rocketship.py download {backups[0]['name']}")
 
     except requests.RequestException as e:
@@ -1074,7 +1116,7 @@ def upload(local_file, remote_filename=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Rocketship - Azure App Service Deployment Helper for Rails"
+        description="Rocketship - Azure App Service deployment helper"
     )
     parser.add_argument(
         "command",
