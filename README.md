@@ -244,9 +244,9 @@ machine from opening a connection to the Azure database.
 
 Everything in `.env.deploy` is uploaded as an App Service setting and a GitHub
 Actions secret, except the names matched by `NOT_FOR_DEPLOYMENT` in
-`rocketship.py` — `ROCKETSHIP_*`, `AZURE_SUBSCRIPTION_ID`, `AZURE_WEBAPP_NAME`
-and `GITHUB_TOKEN`. Those are credentials for the deploy, not for the thing
-deployed, and the running app never asks for them.
+`rocketship.py` — `ROCKETSHIP_*` and `AZURE_SUBSCRIPTION_ID`. Those are
+credentials for the deploy, not for the thing deployed, and the running app
+never asks for them.
 
 Both files are gitignored. Neither should ever be committed.
 

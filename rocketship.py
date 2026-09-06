@@ -560,14 +560,10 @@ exit 0
 #: proxy resolves AZURE_OPENAI_*, OPENAI_API_VERSION and LITELLM_MASTER_KEY from
 #: the environment at boot, via os.environ/... in config/litellm-config.yaml.
 NOT_FOR_DEPLOYMENT = (
-    # Nothing here reads it any more, but it stays on the list so a token
-    # left in .env.deploy is never uploaded to App Service.
-    "GITHUB_TOKEN",
+    # The registry credentials this script logs in with.
     "ROCKETSHIP_",
-    # Which subscription and which Web App to deploy *to*. The app inside has
-    # no use for either.
+    # Which subscription to deploy *to*. The app inside has no use for it.
     "AZURE_SUBSCRIPTION_ID",
-    "AZURE_WEBAPP_NAME",
 )
 
 

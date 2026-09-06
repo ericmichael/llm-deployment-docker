@@ -259,10 +259,8 @@ listed in `NOT_FOR_DEPLOYMENT` in `rocketship.py`:
 
 ```python
 NOT_FOR_DEPLOYMENT = (
-    "GITHUB_TOKEN",
     "ROCKETSHIP_",
     "AZURE_SUBSCRIPTION_ID",
-    "AZURE_WEBAPP_NAME",
 )
 ```
 
@@ -306,8 +304,7 @@ azure:
       EASYAUTH_ENABLED: ${EASYAUTH_ENABLED}
 ```
 
-That is the whole file. There is no `github:` block: deployment does not
-involve GitHub.
+That is the whole file.
 
 Every `${VAR}` is resolved from the environment (populated from `.env.deploy`)
 at deploy time, so no credential is written into this file. Values in
@@ -361,9 +358,8 @@ secrets. A failure aborts rather than retrying key-by-key.
 PostgreSQL service container on every pull request. It reads no secrets.
 
 There is deliberately no deploy workflow. Deployment happens from a machine that
-already holds `.env.deploy` and an `az login` session, which keeps the
-production credentials off GitHub entirely — nothing needs to be mirrored into
-repository secrets, and a push can never move production.
+already holds `.env.deploy` and an `az login` session, so the production
+credentials never leave it, and a push can never move production.
 
 ## Storage
 
