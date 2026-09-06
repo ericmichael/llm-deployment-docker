@@ -87,7 +87,7 @@ class LiteLLMStack:
         self._push_prisma_schema(litellm_db_url)
 
         import uvicorn
-        from aistarterkit.asgi import application  # imports the proxy; reads env above
+        from gateway.asgi import application  # imports the proxy; reads env above
 
         config = uvicorn.Config(application, host="127.0.0.1", port=self.port, log_level="error", lifespan="on")
         self.server = uvicorn.Server(config)

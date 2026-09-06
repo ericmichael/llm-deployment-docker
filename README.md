@@ -1,4 +1,4 @@
-# AI Starter Kit
+# LLM Gateway
 
 A Django application that gives a class of students metered, per-user access to
 LLMs. It issues each student a LiteLLM virtual key, enforces per-user and
@@ -6,7 +6,7 @@ per-course monthly spend caps and model allowlists, and gives staff a roster,
 budget and usage view over the whole thing.
 
 Django and a LiteLLM proxy run **in one process** behind a single ASGI router
-(`aistarterkit/asgi.py`), sharing one PostgreSQL database:
+(`gateway/asgi.py`), sharing one PostgreSQL database:
 
 ```
                     Gunicorn + UvicornWorker  (port 8000)
@@ -112,10 +112,10 @@ compose overrides to point at its own Postgres container.
    ```
 
 4. Run the server. Use an ASGI server rather than `runserver`, since the LiteLLM
-   mounts and WebSocket routes live in `aistarterkit/asgi.py`:
+   mounts and WebSocket routes live in `gateway/asgi.py`:
 
    ```bash
-   gunicorn aistarterkit.asgi:application --bind 0.0.0.0:8000 \
+   gunicorn gateway.asgi:application --bind 0.0.0.0:8000 \
      --worker-class uvicorn.workers.UvicornWorker
    ```
 

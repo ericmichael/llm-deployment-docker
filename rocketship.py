@@ -519,7 +519,7 @@ fi
 
 # Start the application
 cd /usr/src/app
-exec gunicorn aistarterkit.asgi:application \\
+exec gunicorn gateway.asgi:application \\
     --bind 0.0.0.0:8000 \\
     --worker-class uvicorn.workers.UvicornWorker
 '''

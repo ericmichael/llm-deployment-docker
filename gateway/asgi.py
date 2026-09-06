@@ -1,5 +1,5 @@
 """
-ASGI config for aistarterkit project.
+ASGI config for gateway project.
 
 It exposes the ASGI callable as a module-level variable named ``application``.
 
@@ -16,7 +16,7 @@ from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
 from django.urls import re_path
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'aistarterkit.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'gateway.settings')
 
 # Initialize Django ASGI application early to ensure the AppRegistry
 # is populated before importing code that may import ORM models.

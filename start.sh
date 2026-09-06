@@ -31,7 +31,7 @@ is_running() {
 start_gunicorn() {
     while true; do
         echo "[$(date)] Starting Gunicorn with $WORKERS workers on port 8000..."
-        gunicorn aistarterkit.asgi:application \
+        gunicorn gateway.asgi:application \
             --bind 0.0.0.0:8000 \
             --workers $WORKERS \
             --worker-class $WORKER_CLASS \

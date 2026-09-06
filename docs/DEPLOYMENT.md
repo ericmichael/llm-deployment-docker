@@ -248,7 +248,7 @@ local dev server.
 
 Keeping them apart fixes two problems that a single `.env` caused:
 
-- `.env` held the production `DATABASE_URL`, and `aistarterkit/settings.py`
+- `.env` held the production `DATABASE_URL`, and `gateway/settings.py`
   calls `load_dotenv()`. Any `manage.py` invocation outside docker compose
   therefore opened a connection to the Azure database.
 - Everything in `.env` was uploaded as an App Service setting, so local-only

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Starter Kit — a Django 5.0+ web application for AI Engineering projects. It integrates with LLMs through a LiteLLM proxy and includes student/course management, WebSocket support, and Azure deployment automation.
+LLM Gateway — a Django 5.0+ application that gives a class of students metered, per-user access to LLMs. It issues each student a LiteLLM virtual key, enforces per-user and per-course monthly spend caps and model allowlists, and gives staff roster, budget and usage views. Django and the LiteLLM proxy run in one process behind a unified ASGI router.
 
 **Stack**: Django (ASGI/Daphne), LiteLLM proxy, PostgreSQL, Stimulus.js, TailwindCSS, Webpack, Gunicorn+UvicornWorker.
 
@@ -40,7 +40,7 @@ python manage.py revoke_unenrolled_keys [--dry-run]   # sweep keys held by users
 
 ## Architecture
 
-### Unified ASGI Router (`aistarterkit/asgi.py`)
+### Unified ASGI Router (`gateway/asgi.py`)
 
 A single Gunicorn process serves both Django and LiteLLM via Starlette mounts:
 - `/v1/*` → LiteLLM proxy (OpenAI-compatible API)
@@ -54,7 +54,7 @@ Django and LiteLLM share one PostgreSQL database but use separate schemas. LiteL
 
 ### Key Modules
 
-- **`aistarterkit/`** — Django project config, settings, ASGI/WSGI entrypoints, URL routing
+- **`gateway/`** — Django project config, settings, ASGI/WSGI entrypoints, URL routing
 - **`chat/`** — Main app: CustomUser (email-based auth, no username), Course, Enrollment models; admin with CSV import/export; LiteLLM virtual key generation per user
 - **`config/litellm-config.yaml`** — LLM model definitions routing to Azure OpenAI. Every deployment sets `model_info.base_model` (a key in LiteLLM's price map); `asgi.py` additionally registers the deployment name as a price alias at startup because LiteLLM's realtime cost path ignores `base_model` (without it `gpt-realtime` sessions log $0 and bypass budgets)
 - **`assets/js/`** — Webpack entry point + Stimulus controllers (`clipboard`, `reveal`, plus `tailwindcss-stimulus-components`: alert, tabs, toggle); bundle.js is generated (not committed). Styling is Tailwind v3 compiled by webpack (`tailwind.config.js` scans templates/JS/forms; `assets/css/tailwind.css` → `assets/css/app.css`, generated, not committed). Run `npm run build` after adding new Tailwind classes
